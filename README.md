@@ -1,4 +1,4 @@
-# cdp-perf-test-suite-template
+# apha-integration-bridge-perftest
 
 A JMeter based test runner for the CDP Platform.
 
