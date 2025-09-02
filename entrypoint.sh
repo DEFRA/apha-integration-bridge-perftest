@@ -1,7 +1,7 @@
 #!/bin/sh
 
 echo "run_id: $RUN_ID in $ENVIRONMENT"
-echo "HTTP_PROXY: $proxyHost"
+echo "HTTP_PROXY: $HTTP_PROXY"
 
 NOW=$(date +"%Y%m%d-%H%M%S")
 
