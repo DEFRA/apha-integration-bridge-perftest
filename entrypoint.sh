@@ -20,21 +20,7 @@ LOGFILE=${JM_LOGS}/perftest-${TEST_SCENARIO}.log
 
 # Run the test suite
 # jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
-
-# jmeter -n -t test.jmx -JproxyHost=localhost -JproxyPort=3128 -JproxyScheme=http -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}
-
-jmeter -n \
-  -t ${SCENARIOFILE} \
-  -JproxyHost=${__P(proxyHost)} \
-  -JproxyPort=${__P(proxyPort)} \
-  -JproxyScheme=${__P(proxyScheme)} \
-  -Jenv="${ENVIRONMENT}" \
-  -l "${REPORTFILE}" \
-  -j "${LOGFILE}" \
-  -o "${JM_REPORTS}" \
-  -e \
-  -f
-
+jmeter -n -t test.jmx -JproxyHost=${__P(proxyHost)} -JproxyPort=${__P(proxyPort)} -JproxyScheme=${__P(proxyScheme)} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}
 test_exit_code=$?
 
 # Publish the results into S3 so they can be displayed in the CDP Portal
