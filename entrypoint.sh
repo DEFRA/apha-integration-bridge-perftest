@@ -1,6 +1,7 @@
 #!/bin/sh
 
 echo "run_id: $RUN_ID in $ENVIRONMENT"
+echo "HTTP_PROXY: $HTTP_PROXY in $ENVIRONMENT"
 
 NOW=$(date +"%Y%m%d-%H%M%S")
 
