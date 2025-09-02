@@ -20,7 +20,7 @@ LOGFILE=${JM_LOGS}/perftest-${TEST_SCENARIO}.log
 
 # Run the test suite
 # jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
-jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}" -JproxyHost="${proxyHost}" -JproxyPort="${proxyPort}" -JproxyScheme="${proxyScheme}"; test_exit_code=$?
+jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}" -JproxyHost=${__P(proxyHost)} -JproxyPort=${__P(proxyPort)} -JproxyScheme=${__P(proxyScheme)}; test_exit_code=$?
 
 # test_exit_code=$?
 # jmeter -n -t test.jmx -JproxyHost=${__P(proxyHost)} -JproxyPort=${__P(proxyPort)} -JproxyScheme=${__P(proxyScheme)} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
