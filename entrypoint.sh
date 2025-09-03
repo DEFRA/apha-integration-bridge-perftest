@@ -20,21 +20,23 @@ REPORTFILE=${NOW}-perftest-${TEST_SCENARIO}-report.csv
 LOGFILE=${JM_LOGS}/perftest-${TEST_SCENARIO}.log
 
 # Run the test suite
-# jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
+export HTTP_PROXY=http://localhost:3128
+jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
+test_exit_code=$?
 # jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}" -JproxyHost="localhost" -JproxyPort="3128" -JproxyScheme="http"; test_exit_code=$?
-jmeter -n \
-  -t "${SCENARIOFILE}" \
-  -JproxyHost=127.0.0.1 \
-  -JproxyPort=3128 \
-  -JproxyScheme=http \
-  -Jenv="${ENVIRONMENT}" \
-  -l "${RESULTFILE}" \
-  -j "${LOGFILE}" \
-  -o "${HTML_REPORT_DIR}" \
-  -e \
-  -f
+# jmeter -n \
+#   -t "${SCENARIOFILE}" \
+#   -JproxyHost=localhost \
+#   -JproxyPort=3128 \
+#   -JproxyScheme=http \
+#   -Jenv="${ENVIRONMENT}" \
+#   -l "${RESULTFILE}" \
+#   -j "${LOGFILE}" \
+#   -o "${HTML_REPORT_DIR}" \
+#   -e \
+#   -f
 
-# test_exit_code=$?
+
 # jmeter -n -t test.jmx -JproxyHost=${__P(proxyHost)} -JproxyPort=${__P(proxyPort)} -JproxyScheme=${__P(proxyScheme)} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
 # jmeter -n -t ${SCENARIOFILE} -JproxyHost="${proxyHost}" -JproxyPort="${proxyPort}" -JproxyScheme="${proxyScheme}" -Jenv="${ENVIRONMENT}" -l "${REPORTFILE}" -j "${LOGFILE}" -o "${JM_REPORTS}" -e -f; test_exit_code=$?
 
