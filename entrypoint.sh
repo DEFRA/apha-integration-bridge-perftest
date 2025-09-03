@@ -24,7 +24,7 @@ LOGFILE=${JM_LOGS}/perftest-${TEST_SCENARIO}.log
 # jmeter -n -t ${SCENARIOFILE} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}" -JproxyHost="localhost" -JproxyPort="3128" -JproxyScheme="http"; test_exit_code=$?
 jmeter -n \
   -t "${SCENARIOFILE}" \
-  -JproxyHost=localhost \
+  -JproxyHost=127.0.0.1 \
   -JproxyPort=3128 \
   -JproxyScheme=http \
   -Jenv="${ENVIRONMENT}" \
