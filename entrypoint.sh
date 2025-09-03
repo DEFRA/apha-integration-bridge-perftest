@@ -4,9 +4,9 @@ echo "run_id: $RUN_ID in $ENVIRONMENT"
 # echo "HTTP_PROXY: $HTTP_PROXY"
 
 if nc -z localhost 3128; then
-  echo "✅ Port 3188 is open on localhost"
+  echo "✅ Port 3128 is open on localhost"
 else
-  echo "❌ Port 3188 is closed or unreachable on localhost"
+  echo "❌ Port 3128 is closed or unreachable on localhost"
   exit 1
 fi
 
@@ -55,8 +55,6 @@ jmeter -n \
   -Dhttps.proxyHost=localhost \
   -Dhttps.proxyPort=3128 \
   -Dhttp.nonProxyHosts="localhost|127.0.0.1"
-# jmeter -n -t test.jmx -JproxyHost=${__P(proxyHost)} -JproxyPort=${__P(proxyPort)} -JproxyScheme=${__P(proxyScheme)} -e -l "${REPORTFILE}" -o ${JM_REPORTS} -j ${LOGFILE} -f -Jenv="${ENVIRONMENT}"
-# jmeter -n -t ${SCENARIOFILE} -JproxyHost="${proxyHost}" -JproxyPort="${proxyPort}" -JproxyScheme="${proxyScheme}" -Jenv="${ENVIRONMENT}" -l "${REPORTFILE}" -j "${LOGFILE}" -o "${JM_REPORTS}" -e -f; test_exit_code=$?
 
 # Publish the results into S3 so they can be displayed in the CDP Portal
 if [ -n "$RESULTS_OUTPUT_S3_PATH" ]; then
