@@ -3,6 +3,13 @@
 echo "run_id: $RUN_ID in $ENVIRONMENT"
 # echo "HTTP_PROXY: $HTTP_PROXY"
 
+if nc -z localhost 3128; then
+  echo "✅ Port 3188 is open on localhost"
+else
+  echo "❌ Port 3188 is closed or unreachable on localhost"
+  exit 1
+fi
+
 NOW=$(date +"%Y%m%d-%H%M%S")
 
 if [ -z "${JM_HOME}" ]; then
