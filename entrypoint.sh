@@ -18,37 +18,21 @@ fi
 
 JM_SCENARIOS=${JM_HOME}/scenarios
 JM_REPORTS_BASE=${JM_HOME}/reports
-JM_REPORTS=${JM_REPORTS_BASE}/${NOW}-perftest-${TEST_SCENARIO}   # (1) fresh report dir per run
+JM_REPORTS=${JM_REPORTS_BASE}/${NOW}-perftest-${TEST_SCENARIO}
 JM_LOGS=${JM_HOME}/logs
-
 mkdir -p "${JM_REPORTS}" "${JM_LOGS}"
 
 SCENARIOFILE=${JM_SCENARIOS}/${TEST_SCENARIO}.jmx
-REPORTFILE=${NOW}-perftest-${TEST_SCENARIO}-report.csv
+REPORTFILE="${JM_HOME}/${NOW}-perftest-${TEST_SCENARIO}-report.csv"
 LOGFILE=${JM_LOGS}/perftest-${TEST_SCENARIO}.log
 
-# Run the test suite
-jmeter -n \
-  -t "${SCENARIOFILE}" \
-  -e \
-  -l "${REPORTFILE}" \
-  -o "${JM_REPORTS}" \
-  -j "${LOGFILE}" \
-  -f \
-  -Jenv="${ENVIRONMENT}" \
-  -JCLIENT_SECRET="${CLIENT_SECRET}" \   # (2) pass secret as a JMeter property
-  -Duser.dir="${JM_SCENARIOS}" \         # (3) resolve relative files from scenarios
-  -Dhttp.proxyHost=localhost \
-  -Dhttp.proxyPort=3128 \
-  -Dhttps.proxyHost=localhost \
-  -Dhttps.proxyPort=3128 \
-  -Dhttp.nonProxyHosts="localhost|127.0.0.1"
+# Run the test suite (single line to avoid broken backslashes)
+jmeter -n -t "${SCENARIOFILE}" -e -l "${REPORTFILE}" -o "${JM_REPORTS}" -j "${LOGFILE}" -f -Jenv="${ENVIRONMENT}" -JCLIENT_SECRET="${CLIENT_SECRET}" -Duser.dir="${JM_SCENARIOS}" -Dhttp.proxyHost=localhost -Dhttp.proxyPort=3128 -Dhttps.proxyHost=localhost -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts="localhost|127.0.0.1"
 
-test_exit_code=$?                         # (4) capture exit code
+test_exit_code=$?
 
 # Publish the results into S3 so they can be displayed in the CDP Portal
 if [ -n "$RESULTS_OUTPUT_S3_PATH" ]; then
-  # Copy the CSV report file and the generated report files to the S3 bucket
   if [ -f "$JM_REPORTS/index.html" ]; then
     aws --endpoint-url=$S3_ENDPOINT s3 cp "$REPORTFILE" "$RESULTS_OUTPUT_S3_PATH/$REPORTFILE"
     aws --endpoint-url=$S3_ENDPOINT s3 cp "$JM_REPORTS" "$RESULTS_OUTPUT_S3_PATH" --recursive
