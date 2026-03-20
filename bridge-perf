@@ -6,6 +6,28 @@ PLAN_FILE="${SCRIPT_DIR}/apha-integration-bridge-boundary.jmx"
 ENV_DIR="${SCRIPT_DIR}/environments"
 RESULTS_DIR="${SCRIPT_DIR}/results"
 
+usage() {
+  cat <<'EOF'
+Usage:
+  ./bridge-perf gui <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf help
+
+Environments:
+  dev
+  test
+  perf-test
+  preprod
+
+Examples:
+  ./bridge-perf gui dev
+  ./bridge-perf dev
+  ./bridge-perf test
+  ./bridge-perf perf-test -- -Jtarget.total.rps=30
+  ./bridge-perf preprod -- -Jauth.client_secret="$PREPROD_SECRET"
+EOF
+}
+
 env_var_is_set() {
   local key="$1"
   env | LC_ALL=C grep -q "^${key}="
@@ -52,31 +74,6 @@ load_local_env_files() {
   done
 }
 
-usage() {
-  cat <<'EOF'
-Usage:
-  ./bridge-perf gui <environment> [-- <extra-jmeter-args>]
-  ./bridge-perf smoke <environment> [-- <extra-jmeter-args>]
-  ./bridge-perf boundary <environment> [-- <extra-jmeter-args>]
-  ./bridge-perf run <environment-file> [-- <extra-jmeter-args>]
-  ./bridge-perf help
-
-Environments:
-  dev
-  test
-  perf-test
-  preprod
-
-Examples:
-  ./bridge-perf gui dev
-  ./bridge-perf smoke dev
-  ./bridge-perf boundary dev
-  ./bridge-perf boundary test
-  ./bridge-perf run ./environments/dev.properties -- -Jtest.mode=stress -Jtarget.total.rps=30
-  ./bridge-perf run ./environments/dev.properties -- -Jauth.client_secret="$DEV_SECRET"
-EOF
-}
-
 require_cmd() {
   local cmd="$1"
   if ! command -v "${cmd}" >/dev/null 2>&1; then
@@ -113,25 +110,8 @@ auto_select_compatible_java() {
   fi
 }
 
-maybe_install_compatible_java() {
-  if [[ "${BRIDGE_PERF_AUTO_INSTALL_JAVA:-0}" != "1" ]]; then
-    return 0
-  fi
-
-  if [[ -x /usr/libexec/java_home ]]; then
-    if /usr/libexec/java_home -v 21 >/dev/null 2>&1 || /usr/libexec/java_home -v 17 >/dev/null 2>&1; then
-      return 0
-    fi
-  fi
-
-  require_cmd brew
-
-  echo "No compatible Java 21/17 found. Installing Temurin 21 with Homebrew..." >&2
-  brew install --cask temurin@21
-}
-
 require_java_compatible() {
-  local major
+  local major=""
   major="$(java_major_version)"
 
   if [[ -z "${major}" ]]; then
@@ -141,10 +121,20 @@ require_java_compatible() {
 
   if (( major > 21 )); then
     echo "Java ${major} detected. JMeter 5.6.3 in this repo should be run with Java 21 or 17." >&2
-    echo "Install one of those versions, then rerun the command." >&2
-    echo "Tip: BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf <command> ..." >&2
     exit 1
   fi
+}
+
+resolve_env_file() {
+  local env_name="$1"
+  local env_file="${ENV_DIR}/${env_name}.properties"
+
+  if [[ ! -f "${env_file}" ]]; then
+    echo "Unknown environment '${env_name}'. Expected one of: dev, test, perf-test, preprod." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${env_file}"
 }
 
 has_explicit_auth_client_secret() {
@@ -184,18 +174,6 @@ secret_value_for_env() {
   esac
 }
 
-resolve_env_file() {
-  local env_name="$1"
-  local env_file="${ENV_DIR}/${env_name}.properties"
-
-  if [[ ! -f "${env_file}" ]]; then
-    echo "Unknown environment '${env_name}'. Expected one of: dev, test, perf-test, preprod." >&2
-    exit 1
-  fi
-
-  printf '%s\n' "${env_file}"
-}
-
 secret_arg_for_env() {
   local env_name="$1"
   shift
@@ -211,15 +189,6 @@ secret_arg_for_env() {
   fi
 }
 
-env_name_for_file() {
-  local env_file="$1"
-  local env_name=""
-
-  env_name="$(basename "${env_file}")"
-  env_name="${env_name%.properties}"
-  printf '%s\n' "${env_name}"
-}
-
 collect_extra_args() {
   if [[ "${1:-}" == "--" ]]; then
     shift
@@ -230,18 +199,17 @@ collect_extra_args() {
 run_gui() {
   local env_name="$1"
   shift
-  local env_file
+  local env_file=""
   env_file="$(resolve_env_file "${env_name}")"
   mkdir -p "${RESULTS_DIR}"
-
-  local secret_arg=""
-  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
 
   local args=(
     -t "${PLAN_FILE}"
     -q "${env_file}"
   )
 
+  local secret_arg=""
+  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
   if [[ -n "${secret_arg}" ]]; then
     args+=("${secret_arg}")
   fi
@@ -253,78 +221,31 @@ run_gui() {
   exec jmeter "${args[@]}"
 }
 
-run_non_gui() {
-  local env_file="$1"
+run_boundary() {
+  local env_name="$1"
   shift
+  local env_file=""
+  env_file="$(resolve_env_file "${env_name}")"
   mkdir -p "${RESULTS_DIR}"
 
   local args=(
     -n
     -t "${PLAN_FILE}"
     -q "${env_file}"
+    "-Jresults.jtl=results/${env_name}-boundary.jtl"
   )
+
+  local secret_arg=""
+  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+  if [[ -n "${secret_arg}" ]]; then
+    args+=("${secret_arg}")
+  fi
 
   while IFS= read -r -d '' arg; do
     args+=("${arg}")
   done < <(collect_extra_args "$@")
 
   exec jmeter "${args[@]}"
-}
-
-run_non_gui_named() {
-  local mode="$1"
-  local env_name="$2"
-  shift 2
-  local env_file
-  env_file="$(resolve_env_file "${env_name}")"
-
-  local result_name="${env_name}-${mode}.jtl"
-  local args=(
-    "-Jresults.jtl=results/${result_name}"
-  )
-
-  local secret_arg=""
-  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
-  if [[ -n "${secret_arg}" ]]; then
-    args+=("${secret_arg}")
-  fi
-
-  if [[ "${mode}" == "smoke" ]]; then
-    args+=(
-      "-Jtest.mode=boundary"
-      "-Jthreads.max=10"
-      "-Jtarget.total.rps=2"
-      "-Jtarget.burst.requests=10"
-      "-Jtest.duration.seconds=60"
-      "-Jramp_up.seconds=15"
-    )
-  fi
-
-  while IFS= read -r -d '' arg; do
-    args+=("${arg}")
-  done < <(collect_extra_args "$@")
-
-  run_non_gui "${env_file}" -- "${args[@]}"
-}
-
-run_non_gui_file() {
-  local env_file="$1"
-  shift
-  local env_name=""
-  env_name="$(env_name_for_file "${env_file}")"
-  local args=()
-  local secret_arg=""
-  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
-
-  if [[ -n "${secret_arg}" ]]; then
-    args+=("${secret_arg}")
-  fi
-
-  while IFS= read -r -d '' arg; do
-    args+=("${arg}")
-  done < <(collect_extra_args "$@")
-
-  run_non_gui "${env_file}" -- "${args[@]}"
 }
 
 main() {
@@ -333,41 +254,20 @@ main() {
     usage
     return 0
   fi
+  shift || true
 
   load_local_env_files
-  maybe_install_compatible_java
-  auto_select_compatible_java
   require_cmd java
   require_cmd jmeter
+  auto_select_compatible_java
   require_java_compatible
 
-  case "${command}" in
-    gui)
-      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
-      shift
-      run_gui "$@"
-      ;;
-    smoke)
-      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
-      shift
-      run_non_gui_named smoke "$@"
-      ;;
-    boundary)
-      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
-      shift
-      run_non_gui_named boundary "$@"
-      ;;
-    run)
-      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
-      shift
-      run_non_gui_file "$@"
-      ;;
-    *)
-      echo "Unknown command: ${command}" >&2
-      usage >&2
-      exit 1
-      ;;
-  esac
+  if [[ "${command}" == "gui" ]]; then
+    [[ $# -ge 1 ]] || { usage >&2; exit 1; }
+    run_gui "$@"
+  fi
+
+  run_boundary "${command}" "$@"
 }
 
 main "$@"

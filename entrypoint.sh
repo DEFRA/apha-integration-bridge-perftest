@@ -25,7 +25,7 @@ REPORT_DIR="${REPORTS_BASE}/${REPORT_NAME}"
 mkdir -p "${RESULTS_DIR}" "${REPORTS_BASE}"
 
 echo "[entrypoint] running boundary test: environment=${ENV_VALUE}"
-./bridge-perf run "./environments/${JMETER_ENV}.properties" -- \
+./bridge-perf "${JMETER_ENV}" -- \
   -Jresults.jtl=/dev/null \
   -l "${RESULT_FILE}" \
   -e -o "${REPORT_DIR}"

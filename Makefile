@@ -1,30 +1,38 @@
 SHELL := /bin/bash
 
-.PHONY: help gui-dev smoke-dev boundary-dev boundary-test boundary-perf boundary-preprod
+.PHONY: help gui-dev gui-test gui-perf-test gui-preprod dev test perf-test preprod
 
 help:
 	@echo "Available commands:"
 	@echo "  make gui-dev"
-	@echo "  make smoke-dev"
-	@echo "  make boundary-dev"
-	@echo "  make boundary-test"
-	@echo "  make boundary-perf"
-	@echo "  make boundary-preprod"
+	@echo "  make gui-test"
+	@echo "  make gui-perf-test"
+	@echo "  make gui-preprod"
+	@echo "  make dev"
+	@echo "  make test"
+	@echo "  make perf-test"
+	@echo "  make preprod"
 
 gui-dev:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf gui dev
+	./bridge-perf gui dev
 
-smoke-dev:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf smoke dev
+gui-test:
+	./bridge-perf gui test
 
-boundary-dev:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf boundary dev
+gui-perf-test:
+	./bridge-perf gui perf-test
 
-boundary-test:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf boundary test
+gui-preprod:
+	./bridge-perf gui preprod
 
-boundary-perf:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf boundary perf-test
+dev:
+	./bridge-perf dev
 
-boundary-preprod:
-	BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf boundary preprod
+test:
+	./bridge-perf test
+
+perf-test:
+	./bridge-perf perf-test
+
+preprod:
+	./bridge-perf preprod
