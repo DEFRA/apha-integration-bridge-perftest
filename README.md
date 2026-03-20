@@ -21,7 +21,6 @@ The CDP default limit of `100 req/s` with `200` burst is intentionally not treat
 - `environments/`: self-contained environment property templates
 - `bridge-perf`: one-command wrapper for GUI, smoke, and boundary runs
 - `Makefile`: short aliases for common commands
-- `run-boundary.sh`: local wrapper that always runs the JMX from the repository root
 - `secrets.env`: optional local secrets file for portable auth values
 - `secrets.env.example`: placeholder template for local secrets
 - `results/`: default JTL output location
@@ -53,14 +52,14 @@ Recommended workflow:
 
 ## Local Secrets
 
-Both `bridge-perf` and `run-boundary.sh` auto-load env files from this directory in the following order:
+`bridge-perf` auto-loads env files from this directory in the following order:
 
 - `secrets.env`
 - `.env`
 - `.env.local`
 - `.envrc`
 
-They accept both `KEY=value` and `export KEY=value`. Existing shell environment values win, so local files only fill in values that are not already defined. The wrappers automatically inject `-Jauth.client_secret` for `dev`, `test`, `perf-test`, and `preprod`, and `PROD_SECRET` is accepted as a fallback alias for `PREPROD_SECRET`.
+They accept both `KEY=value` and `export KEY=value`. Existing shell environment values win, so local files only fill in values that are not already defined. `bridge-perf` automatically injects `-Jauth.client_secret` for `dev`, `test`, `perf-test`, and `preprod`, and `PROD_SECRET` is accepted as a fallback alias for `PREPROD_SECRET`.
 
 That means this folder can carry its own `secrets.env` and be moved into another repo without relying on parent-shell exports.
 
@@ -76,8 +75,7 @@ Keep the repository root in this structure:
 ├── secrets.env
 ├── secrets.env.example
 ├── environments/
-├── results/
-└── run-boundary.sh
+└── results/
 ```
 
 ## Load Model
@@ -165,7 +163,7 @@ All commands below assume your shell is in the repository root.
 Run with the wrapper script:
 
 ```bash
-./run-boundary.sh ./environments/dev.properties
+./bridge-perf run ./environments/dev.properties
 ```
 
 Run directly with JMeter and a local property file:
@@ -190,14 +188,14 @@ jmeter -n \
 Run in test:
 
 ```bash
-./run-boundary.sh ./environments/test.properties \
+./bridge-perf run ./environments/test.properties -- \
   -Jauth.client_secret="$TEST_SECRET"
 ```
 
 Run in preprod or perf-test style environments:
 
 ```bash
-./run-boundary.sh ./environments/preprod.properties \
+./bridge-perf run ./environments/preprod.properties -- \
   -Jauth.client_secret="$PREPROD_SECRET" \
   -Jresults.jtl=results/preprod-boundary.jtl
 ```
@@ -205,7 +203,7 @@ Run in preprod or perf-test style environments:
 Run in perf-test:
 
 ```bash
-./run-boundary.sh ./environments/perf-test.properties \
+./bridge-perf run ./environments/perf-test.properties -- \
   -Jauth.client_secret="$PERF_SECRET" \
   -Jresults.jtl=results/perf-test-boundary.jtl
 ```
@@ -246,7 +244,6 @@ To change the mix as well, override one or more weights:
 
 - The plan writes results to the JTL path in `results.jtl`.
 - `bridge-perf` is the recommended entrypoint for day-to-day local use.
-- `run-boundary.sh` resolves the test plan and default environment relative to the repository root layout shown above.
 - The sample JTL listener is suitable for non-GUI and CI/CD runs.
 - Add `-e -o <dashboard_dir>` if you want the standard JMeter HTML dashboard.
 - Keep test data valid for the target environment, especially workorder, customer, organisation, and location-search IDs.

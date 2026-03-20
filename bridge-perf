@@ -253,17 +253,33 @@ run_gui() {
   exec jmeter "${args[@]}"
 }
 
+run_non_gui() {
+  local env_file="$1"
+  shift
+  mkdir -p "${RESULTS_DIR}"
+
+  local args=(
+    -n
+    -t "${PLAN_FILE}"
+    -q "${env_file}"
+  )
+
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_extra_args "$@")
+
+  exec jmeter "${args[@]}"
+}
+
 run_non_gui_named() {
   local mode="$1"
   local env_name="$2"
   shift 2
   local env_file
   env_file="$(resolve_env_file "${env_name}")"
-  mkdir -p "${RESULTS_DIR}"
 
   local result_name="${env_name}-${mode}.jtl"
   local args=(
-    "${env_file}"
     "-Jresults.jtl=results/${result_name}"
   )
 
@@ -288,17 +304,15 @@ run_non_gui_named() {
     args+=("${arg}")
   done < <(collect_extra_args "$@")
 
-  exec "${SCRIPT_DIR}/run-boundary.sh" "${args[@]}"
+  run_non_gui "${env_file}" -- "${args[@]}"
 }
 
 run_non_gui_file() {
   local env_file="$1"
   shift
-  mkdir -p "${RESULTS_DIR}"
-
-  local args=("${env_file}")
   local env_name=""
   env_name="$(env_name_for_file "${env_file}")"
+  local args=()
   local secret_arg=""
   secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
 
@@ -310,7 +324,7 @@ run_non_gui_file() {
     args+=("${arg}")
   done < <(collect_extra_args "$@")
 
-  exec "${SCRIPT_DIR}/run-boundary.sh" "${args[@]}"
+  run_non_gui "${env_file}" -- "${args[@]}"
 }
 
 main() {
