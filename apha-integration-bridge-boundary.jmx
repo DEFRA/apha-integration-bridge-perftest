@@ -1,0 +1,795 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="APHA Integration Bridge - 10 Minute Boundary Load Test">
+      <stringProp name="TestPlan.comments">Controlled boundary test for 5 APHA Integration Bridge endpoints. The plan defaults to the agreed 25 RPS steady-state rate with 50-request burst support and is intended for safe rate-limit verification rather than stress or soak testing.</stringProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+    </TestPlan>
+    <hashTree>
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="Setup - Runtime Properties and Auth">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">stoptestnow</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Calculate Per-Endpoint Throughput" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+import java.math.RoundingMode
+
+def envName = props.get(&apos;environment.name&apos;, &apos;dev&apos;).trim()
+def testMode = props.get(&apos;test.mode&apos;, &apos;boundary&apos;).trim().toLowerCase()
+assert [&apos;boundary&apos;, &apos;stress&apos;].contains(testMode) : &apos;test.mode must be boundary or stress&apos;
+
+def targetRpsRaw = props.get(&apos;target.total.rps&apos;, &apos;&apos;).trim()
+BigDecimal totalRps
+if (targetRpsRaw) {
+  totalRps = new BigDecimal(targetRpsRaw)
+} else {
+  def totalRpm = new BigDecimal(props.get(&apos;target.total.rpm&apos;, &apos;1500&apos;))
+  assert totalRpm &gt; 0 : &apos;target.total.rpm must be greater than 0 when target.total.rps is not set&apos;
+  totalRps = totalRpm.divide(new BigDecimal(&apos;60&apos;), 3, RoundingMode.HALF_UP)
+}
+assert totalRps &gt; 0 : &apos;target.total.rps must be greater than 0&apos;
+
+def burstRequests = new BigDecimal(props.get(&apos;target.burst.requests&apos;, &apos;50&apos;))
+assert burstRequests &gt; 0 : &apos;target.burst.requests must be greater than 0&apos;
+
+def threadsMax = new BigDecimal(props.get(&apos;threads.max&apos;, &apos;50&apos;))
+assert threadsMax &gt; 0 : &apos;threads.max must be greater than 0&apos;
+assert threadsMax &gt;= burstRequests :
+  &apos;threads.max must be at least target.burst.requests so the plan can absorb the agreed burst ceiling&apos;
+
+if (testMode == &apos;boundary&apos;) {
+  assert totalRps &lt;= new BigDecimal(&apos;25&apos;) :
+    &apos;Boundary mode must not exceed the agreed steady-state limit of 25 RPS. Set test.mode=stress for higher-rate scenarios.&apos;
+  assert burstRequests &lt;= new BigDecimal(&apos;50&apos;) :
+    &apos;Boundary mode must not exceed the agreed burst ceiling of 50 requests. Set test.mode=stress for higher-rate scenarios.&apos;
+}
+
+props.put(&apos;target.total.rps.runtime&apos;, totalRps.toPlainString())
+props.put(&apos;target.total.rpm.runtime&apos;, totalRps.multiply(new BigDecimal(&apos;60&apos;)).setScale(3, RoundingMode.HALF_UP).toPlainString())
+props.put(&apos;target.burst.requests.runtime&apos;, burstRequests.stripTrailingZeros().toPlainString())
+
+def weights = [
+  &apos;rps.locations_find&apos;     : new BigDecimal(props.get(&apos;throughput.weight.locations_find&apos;, &apos;1&apos;)),
+  &apos;rps.workorders&apos;         : new BigDecimal(props.get(&apos;throughput.weight.workorders&apos;, &apos;1&apos;)),
+  &apos;rps.workorders_find&apos;    : new BigDecimal(props.get(&apos;throughput.weight.workorders_find&apos;, &apos;1&apos;)),
+  &apos;rps.customers_find&apos;     : new BigDecimal(props.get(&apos;throughput.weight.customers_find&apos;, &apos;1&apos;)),
+  &apos;rps.organisations_find&apos; : new BigDecimal(props.get(&apos;throughput.weight.organisations_find&apos;, &apos;1&apos;))
+]
+
+weights.each { key, value -&gt;
+  assert value &gt;= 0 : &quot;Throughput weight for ${key} must be zero or greater&quot;
+}
+
+def totalWeight = weights.values().inject(BigDecimal.ZERO) { acc, value -&gt; acc + value }
+assert totalWeight &gt; 0 : &apos;The sum of throughput weights must be greater than zero&apos;
+
+weights.each { key, value -&gt;
+  def rps = totalRps.multiply(value).divide(totalWeight, 3, RoundingMode.HALF_UP)
+  props.put(key, rps.toPlainString())
+}
+
+[
+  &apos;pace.next.locations_find&apos;,
+  &apos;pace.next.workorders&apos;,
+  &apos;pace.next.workorders_find&apos;,
+  &apos;pace.next.customers_find&apos;,
+  &apos;pace.next.organisations_find&apos;
+].each { props.remove(it) }
+
+log.info(&quot;APHA Integration Bridge boundary load for ${envName}: mode=${testMode}, totalRps=${totalRps.toPlainString()}, burstRequests=${burstRequests.stripTrailingZeros().toPlainString()}, &quot; +
+  weights.collect { key, value -&gt; &quot;${key}=&quot; + props.get(key) }.join(&apos;, &apos;))
+          </stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Resolve Runtime Access Token" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+import groovy.json.JsonSlurper
+import java.net.HttpURLConnection
+import java.net.URLEncoder
+
+def mode = props.get(&apos;auth.mode&apos;, &apos;client_credentials&apos;).trim()
+
+if (mode.equalsIgnoreCase(&apos;bearer_token&apos;)) {
+  def token = props.get(&apos;auth.bearer_token&apos;, &apos;&apos;).trim()
+  assert token : &apos;auth.bearer_token must be set when auth.mode=bearer_token&apos;
+  props.put(&apos;auth.access_token.runtime&apos;, token)
+  log.info(&apos;Using bearer token supplied by property for APHA Integration Bridge boundary test&apos;)
+  return
+}
+
+def clientId = props.get(&apos;auth.client_id&apos;, &apos;&apos;).trim()
+def clientSecret = props.get(&apos;auth.client_secret&apos;, &apos;&apos;).trim()
+assert clientId : &apos;auth.client_id must be set when auth.mode=client_credentials&apos;
+assert clientSecret : &apos;auth.client_secret must be set when auth.mode=client_credentials&apos;
+
+def protocol = props.get(&apos;auth.protocol&apos;, &apos;https&apos;).trim()
+def host = props.get(&apos;auth.host&apos;, &apos;&apos;).trim()
+def port = props.get(&apos;auth.port&apos;, &apos;&apos;).trim()
+def tokenPath = props.get(&apos;auth.token.path&apos;, &apos;/oauth2/token&apos;).trim()
+assert host : &apos;auth.host must be set when auth.mode=client_credentials&apos;
+
+def normalisedPath = tokenPath.startsWith(&apos;/&apos;) ? tokenPath : &quot;/${tokenPath}&quot;
+def portPart = port ? &quot;:${port}&quot; : &apos;&apos;
+def tokenUrl = new URL(&quot;${protocol}://${host}${portPart}${normalisedPath}&quot;)
+
+def encoded = &quot;${clientId}:${clientSecret}&quot;.getBytes(&apos;UTF-8&apos;).encodeBase64().toString()
+def form = [
+  grant_type   : &apos;client_credentials&apos;,
+  client_id    : clientId,
+  client_secret: clientSecret
+].collect { key, value -&gt; &quot;${key}=${URLEncoder.encode(String.valueOf(value), &apos;UTF-8&apos;)}&quot; }.join(&apos;&amp;&apos;)
+
+def connection = (HttpURLConnection) tokenUrl.openConnection()
+connection.setRequestMethod(&apos;POST&apos;)
+connection.setDoOutput(true)
+connection.setConnectTimeout(Integer.parseInt(props.get(&apos;http.connect.timeout.ms&apos;, &apos;10000&apos;)))
+connection.setReadTimeout(Integer.parseInt(props.get(&apos;http.response.timeout.ms&apos;, &apos;30000&apos;)))
+connection.setRequestProperty(&apos;Authorization&apos;, &quot;Basic ${encoded}&quot;)
+connection.setRequestProperty(&apos;Content-Type&apos;, props.get(&apos;header.content_type_form&apos;, &apos;application/x-www-form-urlencoded&apos;))
+connection.setRequestProperty(&apos;Accept&apos;, props.get(&apos;header.accept&apos;, &apos;application/json&apos;))
+
+connection.outputStream.withWriter(&apos;UTF-8&apos;) { writer -&gt;
+  writer &lt;&lt; form
+}
+
+def status = connection.responseCode
+def stream = status &gt;= 400 ? connection.errorStream : connection.inputStream
+def body = stream ? stream.getText(&apos;UTF-8&apos;) : &apos;&apos;
+assert status == 200 : &quot;OAuth token endpoint returned HTTP ${status}. Body=${body}&quot;
+assert body?.trim() : &apos;OAuth token response body is empty&apos;
+
+def json = new JsonSlurper().parseText(body)
+def token = json?.access_token?.toString()?.trim()
+assert token : &apos;OAuth token response did not contain access_token&apos;
+props.put(&apos;auth.access_token.runtime&apos;, token)
+          </stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Validate Runtime Access Token" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+def token = props.get(&apos;auth.access_token.runtime&apos;, &apos;&apos;).trim()
+assert token : &apos;No runtime access token is available for the boundary test&apos;
+          </stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - Main Request Mix" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.max,50)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,60)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;600&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;60&apos;))}</stringProp>
+        <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="API HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.connect_timeout">${__P(http.connect.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(http.response.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(api.host,)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(api.port,)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(api.protocol,https)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation"></stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Common API Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">${__P(header.accept,application/json)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">${__P(header.user_agent,APHA-Integration-Bridge-JMeter-Boundary)}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Assert Samplers Complete Within Max Duration" enabled="true">
+          <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
+        </DurationAssertion>
+        <hashTree/>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Validate Main Runtime Properties" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+assert props.get(&apos;auth.access_token.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime bearer token is missing before the main load starts&apos;
+assert props.get(&apos;target.total.rps.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime total RPS is missing before the main load starts&apos;
+assert props.get(&apos;target.burst.requests.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime burst limit is missing before the main load starts&apos;
+[&apos;rps.locations_find&apos;, &apos;rps.workorders&apos;, &apos;rps.workorders_find&apos;,
+ &apos;rps.customers_find&apos;, &apos;rps.organisations_find&apos;].each { key -&gt;
+  assert props.get(key, &apos;&apos;).trim() : &quot;Missing computed throughput property: ${key}&quot;
+}
+          </stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="01 POST /locations/find" enabled="true"/>
+        <hashTree>
+          <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /locations/find" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def rps = Double.parseDouble(props.get(&apos;rps.locations_find&apos;, &apos;1&apos;))
+assert rps &gt; 0d : &apos;rps.locations_find must be greater than 0&apos;
+long intervalMs = Math.max(1L, Math.round(1000d / rps))
+long waitMs
+synchronized (props) {
+  long now = System.currentTimeMillis()
+  long nextAt = Long.parseLong(props.get(&apos;pace.next.locations_find&apos;, &apos;0&apos;))
+  long scheduledAt = Math.max(now, nextAt)
+  waitMs = Math.max(0L, scheduledAt - now)
+  props.put(&apos;pace.next.locations_find&apos;, Long.toString(scheduledAt + intervalMs))
+}
+return waitMs
+            </stringProp>
+          </JSR223Timer>
+          <hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON Headers - Locations Find" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">${__P(header.content_type_json,application/json)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /locations/find" enabled="true">
+            <stringProp name="HTTPSampler.path">${__P(endpoint.locations_find.path,/locations/find)}?page=${__P(endpoint.locations_find.page,1)}&amp;pageSize=${__P(endpoint.locations_find.page_size,50)}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">&#xd;
+{&#xd;
+  &quot;ids&quot;: ${__groovy(props.getProperty(&apos;endpoint.locations_find.ids.json&apos;) ?: &apos;[]&apos;)}&#xd;
+}&#xd;
+                  </stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for POST /locations/find" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">POST /locations/find did not return HTTP 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert Locations Find Payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+import groovy.json.JsonSlurper
+
+def body = prev.getResponseDataAsString()
+assert body?.trim() : &apos;POST /locations/find returned an empty response body&apos;
+def json = new JsonSlurper().parseText(body)
+assert json?.data instanceof List : &apos;POST /locations/find response did not contain an array at data&apos;
+assert !json.data.isEmpty() : &apos;POST /locations/find returned an empty data array&apos;
+assert json.links?.self?.toString()?.trim() : &apos;POST /locations/find response is missing links.self&apos;
+assert json.data.every { it.type == &apos;locations&apos; &amp;&amp; it.id?.toString()?.trim() } :
+  &apos;POST /locations/find returned an item without a valid location type or id&apos;
+              </stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="02 GET /workorders" enabled="true"/>
+        <hashTree>
+          <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace GET /workorders" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def rps = Double.parseDouble(props.get(&apos;rps.workorders&apos;, &apos;1&apos;))
+assert rps &gt; 0d : &apos;rps.workorders must be greater than 0&apos;
+long intervalMs = Math.max(1L, Math.round(1000d / rps))
+long waitMs
+synchronized (props) {
+  long now = System.currentTimeMillis()
+  long nextAt = Long.parseLong(props.get(&apos;pace.next.workorders&apos;, &apos;0&apos;))
+  long scheduledAt = Math.max(now, nextAt)
+  waitMs = Math.max(0L, scheduledAt - now)
+  props.put(&apos;pace.next.workorders&apos;, Long.toString(scheduledAt + intervalMs))
+}
+return waitMs
+            </stringProp>
+          </JSR223Timer>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /workorders" enabled="true">
+            <stringProp name="HTTPSampler.path">${__P(endpoint.workorders.path,/workorders)}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="page" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
+                  <stringProp name="Argument.name">page</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.page,1)}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+                <elementProp name="pageSize" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
+                  <stringProp name="Argument.name">pageSize</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.page_size,10)}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+                <elementProp name="startActivationDate" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
+                  <stringProp name="Argument.name">startActivationDate</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.start_activation_date,2022-02-18T09:54:09.778Z)}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+                <elementProp name="endActivationDate" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
+                  <stringProp name="Argument.name">endActivationDate</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.end_activation_date,2026-02-18T09:54:09.778Z)}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+                <elementProp name="country" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
+                  <stringProp name="Argument.name">country</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.country,SCOTLAND)}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for GET /workorders" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">GET /workorders did not return HTTP 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert Workorders Payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+import groovy.json.JsonSlurper
+
+def body = prev.getResponseDataAsString()
+assert body?.trim() : &apos;GET /workorders returned an empty response body&apos;
+def json = new JsonSlurper().parseText(body)
+assert json?.data instanceof List : &apos;GET /workorders response did not contain an array at data&apos;
+assert !json.data.isEmpty() : &apos;GET /workorders returned an empty data array&apos;
+assert json.links?.self?.toString()?.trim() : &apos;GET /workorders response is missing links.self&apos;
+assert json.data.every { it.type == &apos;workorders&apos; &amp;&amp; it.id?.toString()?.trim() } :
+  &apos;GET /workorders returned an item without a valid workorder type or id&apos;
+              </stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="03 POST /workorders/find" enabled="true"/>
+        <hashTree>
+          <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /workorders/find" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def rps = Double.parseDouble(props.get(&apos;rps.workorders_find&apos;, &apos;1&apos;))
+assert rps &gt; 0d : &apos;rps.workorders_find must be greater than 0&apos;
+long intervalMs = Math.max(1L, Math.round(1000d / rps))
+long waitMs
+synchronized (props) {
+  long now = System.currentTimeMillis()
+  long nextAt = Long.parseLong(props.get(&apos;pace.next.workorders_find&apos;, &apos;0&apos;))
+  long scheduledAt = Math.max(now, nextAt)
+  waitMs = Math.max(0L, scheduledAt - now)
+  props.put(&apos;pace.next.workorders_find&apos;, Long.toString(scheduledAt + intervalMs))
+}
+return waitMs
+            </stringProp>
+          </JSR223Timer>
+          <hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON Headers - Workorders Find" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">${__P(header.content_type_json,application/json)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /workorders/find" enabled="true">
+            <stringProp name="HTTPSampler.path">${__P(endpoint.workorders_find.path,/workorders/find)}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">&#xd;
+{&#xd;
+  &quot;ids&quot;: ${__groovy(props.getProperty(&apos;endpoint.workorders_find.ids.json&apos;) ?: &apos;[]&apos;)}&#xd;
+}&#xd;
+                  </stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for POST /workorders/find" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">POST /workorders/find did not return HTTP 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert Workorders Find Payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+import groovy.json.JsonSlurper
+
+def body = prev.getResponseDataAsString()
+assert body?.trim() : &apos;POST /workorders/find returned an empty response body&apos;
+def json = new JsonSlurper().parseText(body)
+assert json?.data instanceof List : &apos;POST /workorders/find response did not contain an array at data&apos;
+assert !json.data.isEmpty() : &apos;POST /workorders/find returned an empty data array&apos;
+assert json.links?.self?.toString()?.trim() : &apos;POST /workorders/find response is missing links.self&apos;
+assert json.data.every { it.type == &apos;workorders&apos; &amp;&amp; it.id?.toString()?.trim() } :
+  &apos;POST /workorders/find returned an item without a valid workorder type or id&apos;
+              </stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="04 POST /customers/find" enabled="true"/>
+        <hashTree>
+          <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /customers/find" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def rps = Double.parseDouble(props.get(&apos;rps.customers_find&apos;, &apos;1&apos;))
+assert rps &gt; 0d : &apos;rps.customers_find must be greater than 0&apos;
+long intervalMs = Math.max(1L, Math.round(1000d / rps))
+long waitMs
+synchronized (props) {
+  long now = System.currentTimeMillis()
+  long nextAt = Long.parseLong(props.get(&apos;pace.next.customers_find&apos;, &apos;0&apos;))
+  long scheduledAt = Math.max(now, nextAt)
+  waitMs = Math.max(0L, scheduledAt - now)
+  props.put(&apos;pace.next.customers_find&apos;, Long.toString(scheduledAt + intervalMs))
+}
+return waitMs
+            </stringProp>
+          </JSR223Timer>
+          <hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON Headers - Customers Find" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">${__P(header.content_type_json,application/json)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /customers/find" enabled="true">
+            <stringProp name="HTTPSampler.path">${__P(endpoint.customers_find.path,/customers/find)}?page=${__P(endpoint.customers_find.page,1)}&amp;pageSize=${__P(endpoint.customers_find.page_size,50)}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">&#xd;
+{&#xd;
+  &quot;ids&quot;: ${__groovy(props.getProperty(&apos;endpoint.customers_find.ids.json&apos;) ?: &apos;[]&apos;)}&#xd;
+}&#xd;
+                  </stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for POST /customers/find" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">POST /customers/find did not return HTTP 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert Customers Find Payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+import groovy.json.JsonSlurper
+
+def body = prev.getResponseDataAsString()
+assert body?.trim() : &apos;POST /customers/find returned an empty response body&apos;
+def json = new JsonSlurper().parseText(body)
+assert json?.data instanceof List : &apos;POST /customers/find response did not contain an array at data&apos;
+assert !json.data.isEmpty() : &apos;POST /customers/find returned an empty data array&apos;
+assert json.links?.self?.toString()?.trim() : &apos;POST /customers/find response is missing links.self&apos;
+assert json.data.every { it.type == &apos;customers&apos; &amp;&amp; it.id?.toString()?.trim() } :
+  &apos;POST /customers/find returned an item without a valid customer type or id&apos;
+              </stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="05 POST /organisations/find" enabled="true"/>
+        <hashTree>
+          <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /organisations/find" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def rps = Double.parseDouble(props.get(&apos;rps.organisations_find&apos;, &apos;1&apos;))
+assert rps &gt; 0d : &apos;rps.organisations_find must be greater than 0&apos;
+long intervalMs = Math.max(1L, Math.round(1000d / rps))
+long waitMs
+synchronized (props) {
+  long now = System.currentTimeMillis()
+  long nextAt = Long.parseLong(props.get(&apos;pace.next.organisations_find&apos;, &apos;0&apos;))
+  long scheduledAt = Math.max(now, nextAt)
+  waitMs = Math.max(0L, scheduledAt - now)
+  props.put(&apos;pace.next.organisations_find&apos;, Long.toString(scheduledAt + intervalMs))
+}
+return waitMs
+            </stringProp>
+          </JSR223Timer>
+          <hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON Headers - Organisations Find" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">${__P(header.content_type_json,application/json)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /organisations/find" enabled="true">
+            <stringProp name="HTTPSampler.path">${__P(endpoint.organisations_find.path,/organisations/find)}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">&#xd;
+{&#xd;
+  &quot;ids&quot;: ${__groovy(props.getProperty(&apos;endpoint.organisations_find.ids.json&apos;) ?: &apos;[]&apos;)}&#xd;
+}&#xd;
+                  </stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for POST /organisations/find" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">POST /organisations/find did not return HTTP 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert Organisations Find Payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+import groovy.json.JsonSlurper
+
+def body = prev.getResponseDataAsString()
+assert body?.trim() : &apos;POST /organisations/find returned an empty response body&apos;
+def json = new JsonSlurper().parseText(body)
+assert json?.data instanceof List : &apos;POST /organisations/find response did not contain an array at data&apos;
+assert !json.data.isEmpty() : &apos;POST /organisations/find returned an empty data array&apos;
+assert json.links?.self?.toString()?.trim() : &apos;POST /organisations/find response is missing links.self&apos;
+assert json.data.every { it.type == &apos;organisations&apos; &amp;&amp; it.id?.toString()?.trim() } :
+  &apos;POST /organisations/find returned an item without a valid organisation type or id&apos;
+              </stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+      </hashTree>
+      <ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector" testname="Boundary Test JTL Writer" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>false</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">${__P(results.jtl,results/apha-integration-bridge-boundary.jtl)}</stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

@@ -1,0 +1,359 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLAN_FILE="${SCRIPT_DIR}/apha-integration-bridge-boundary.jmx"
+ENV_DIR="${SCRIPT_DIR}/environments"
+RESULTS_DIR="${SCRIPT_DIR}/results"
+
+env_var_is_set() {
+  local key="$1"
+  env | LC_ALL=C grep -q "^${key}="
+}
+
+parse_env_file() {
+  local env_file="$1"
+  local line=""
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+
+    [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[2]}"
+      local value="${BASH_REMATCH[3]}"
+
+      if [[ "${value}" =~ ^\".*\"$ ]] || [[ "${value}" =~ ^\'.*\'$ ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+
+      if ! env_var_is_set "${key}"; then
+        export "${key}=${value}"
+      fi
+    fi
+  done < "${env_file}"
+}
+
+load_local_env_files() {
+  local env_file=""
+  local env_files=(
+    "${SCRIPT_DIR}/secrets.env"
+    "${SCRIPT_DIR}/.env"
+    "${SCRIPT_DIR}/.env.local"
+    "${SCRIPT_DIR}/.envrc"
+  )
+
+  for env_file in "${env_files[@]}"; do
+    if [[ -f "${env_file}" ]]; then
+      parse_env_file "${env_file}"
+    fi
+  done
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./bridge-perf gui <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf smoke <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf boundary <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf run <environment-file> [-- <extra-jmeter-args>]
+  ./bridge-perf help
+
+Environments:
+  dev
+  test
+  perf-test
+  preprod
+
+Examples:
+  ./bridge-perf gui dev
+  ./bridge-perf smoke dev
+  ./bridge-perf boundary dev
+  ./bridge-perf boundary test
+  ./bridge-perf run ./environments/dev.properties -- -Jtest.mode=stress -Jtarget.total.rps=30
+  ./bridge-perf run ./environments/dev.properties -- -Jauth.client_secret="$DEV_SECRET"
+EOF
+}
+
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "${cmd}" >/dev/null 2>&1; then
+    echo "${cmd} is not installed or not on PATH" >&2
+    exit 1
+  fi
+}
+
+java_major_version() {
+  java -version 2>&1 | awk -F '"' '/version/ {print $2}' | awk -F. '{print $1}'
+}
+
+auto_select_compatible_java() {
+  local current_major=""
+  if command -v java >/dev/null 2>&1; then
+    current_major="$(java_major_version)"
+    if [[ -n "${current_major}" ]] && (( current_major <= 21 )); then
+      return 0
+    fi
+  fi
+
+  if [[ -x /usr/libexec/java_home ]]; then
+    local candidate_home=""
+    for version in 21 17; do
+      candidate_home="$(
+        /usr/libexec/java_home -v "${version}" 2>/dev/null || true
+      )"
+      if [[ -n "${candidate_home}" ]]; then
+        export JAVA_HOME="${candidate_home}"
+        export PATH="${JAVA_HOME}/bin:${PATH}"
+        return 0
+      fi
+    done
+  fi
+}
+
+maybe_install_compatible_java() {
+  if [[ "${BRIDGE_PERF_AUTO_INSTALL_JAVA:-0}" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ -x /usr/libexec/java_home ]]; then
+    if /usr/libexec/java_home -v 21 >/dev/null 2>&1 || /usr/libexec/java_home -v 17 >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  require_cmd brew
+
+  echo "No compatible Java 21/17 found. Installing Temurin 21 with Homebrew..." >&2
+  brew install --cask temurin@21
+}
+
+require_java_compatible() {
+  local major
+  major="$(java_major_version)"
+
+  if [[ -z "${major}" ]]; then
+    echo "Could not determine Java version. Set JAVA_HOME to Java 21 or 17." >&2
+    exit 1
+  fi
+
+  if (( major > 21 )); then
+    echo "Java ${major} detected. JMeter 5.6.3 in this repo should be run with Java 21 or 17." >&2
+    echo "Install one of those versions, then rerun the command." >&2
+    echo "Tip: BRIDGE_PERF_AUTO_INSTALL_JAVA=1 ./bridge-perf <command> ..." >&2
+    exit 1
+  fi
+}
+
+has_explicit_auth_client_secret() {
+  local arg=""
+
+  for arg in "$@"; do
+    case "${arg}" in
+      -Jauth.client_secret=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+secret_value_for_env() {
+  local env_name="$1"
+
+  case "${env_name}" in
+    dev)
+      printf '%s\n' "${DEV_SECRET-}"
+      ;;
+    test)
+      printf '%s\n' "${TEST_SECRET-}"
+      ;;
+    perf-test)
+      printf '%s\n' "${PERF_SECRET-}"
+      ;;
+    preprod)
+      if env_var_is_set PREPROD_SECRET; then
+        printf '%s\n' "${PREPROD_SECRET-}"
+      elif env_var_is_set PROD_SECRET; then
+        printf '%s\n' "${PROD_SECRET-}"
+      fi
+      ;;
+  esac
+}
+
+resolve_env_file() {
+  local env_name="$1"
+  local env_file="${ENV_DIR}/${env_name}.properties"
+
+  if [[ ! -f "${env_file}" ]]; then
+    echo "Unknown environment '${env_name}'. Expected one of: dev, test, perf-test, preprod." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${env_file}"
+}
+
+secret_arg_for_env() {
+  local env_name="$1"
+  shift
+  local secret_value=""
+
+  if has_explicit_auth_client_secret "$@"; then
+    return 0
+  fi
+
+  secret_value="$(secret_value_for_env "${env_name}")"
+  if [[ -n "${secret_value}" ]]; then
+    printf '%s\n' "-Jauth.client_secret=${secret_value}"
+  fi
+}
+
+env_name_for_file() {
+  local env_file="$1"
+  local env_name=""
+
+  env_name="$(basename "${env_file}")"
+  env_name="${env_name%.properties}"
+  printf '%s\n' "${env_name}"
+}
+
+collect_extra_args() {
+  if [[ "${1:-}" == "--" ]]; then
+    shift
+  fi
+  printf '%s\0' "$@"
+}
+
+run_gui() {
+  local env_name="$1"
+  shift
+  local env_file
+  env_file="$(resolve_env_file "${env_name}")"
+  mkdir -p "${RESULTS_DIR}"
+
+  local secret_arg=""
+  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+
+  local args=(
+    -t "${PLAN_FILE}"
+    -q "${env_file}"
+  )
+
+  if [[ -n "${secret_arg}" ]]; then
+    args+=("${secret_arg}")
+  fi
+
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_extra_args "$@")
+
+  exec jmeter "${args[@]}"
+}
+
+run_non_gui_named() {
+  local mode="$1"
+  local env_name="$2"
+  shift 2
+  local env_file
+  env_file="$(resolve_env_file "${env_name}")"
+  mkdir -p "${RESULTS_DIR}"
+
+  local result_name="${env_name}-${mode}.jtl"
+  local args=(
+    "${env_file}"
+    "-Jresults.jtl=results/${result_name}"
+  )
+
+  local secret_arg=""
+  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+  if [[ -n "${secret_arg}" ]]; then
+    args+=("${secret_arg}")
+  fi
+
+  if [[ "${mode}" == "smoke" ]]; then
+    args+=(
+      "-Jtest.mode=boundary"
+      "-Jthreads.max=10"
+      "-Jtarget.total.rps=2"
+      "-Jtarget.burst.requests=10"
+      "-Jtest.duration.seconds=60"
+      "-Jramp_up.seconds=15"
+    )
+  fi
+
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_extra_args "$@")
+
+  exec "${SCRIPT_DIR}/run-boundary.sh" "${args[@]}"
+}
+
+run_non_gui_file() {
+  local env_file="$1"
+  shift
+  mkdir -p "${RESULTS_DIR}"
+
+  local args=("${env_file}")
+  local env_name=""
+  env_name="$(env_name_for_file "${env_file}")"
+  local secret_arg=""
+  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+
+  if [[ -n "${secret_arg}" ]]; then
+    args+=("${secret_arg}")
+  fi
+
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_extra_args "$@")
+
+  exec "${SCRIPT_DIR}/run-boundary.sh" "${args[@]}"
+}
+
+main() {
+  local command="${1:-help}"
+  if [[ "${command}" == "help" || "${command}" == "-h" || "${command}" == "--help" ]]; then
+    usage
+    return 0
+  fi
+
+  load_local_env_files
+  maybe_install_compatible_java
+  auto_select_compatible_java
+  require_cmd java
+  require_cmd jmeter
+  require_java_compatible
+
+  case "${command}" in
+    gui)
+      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+      shift
+      run_gui "$@"
+      ;;
+    smoke)
+      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+      shift
+      run_non_gui_named smoke "$@"
+      ;;
+    boundary)
+      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+      shift
+      run_non_gui_named boundary "$@"
+      ;;
+    run)
+      [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+      shift
+      run_non_gui_file "$@"
+      ;;
+    *)
+      echo "Unknown command: ${command}" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
