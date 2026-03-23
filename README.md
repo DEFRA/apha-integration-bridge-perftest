@@ -66,4 +66,4 @@ The Docker image uses:
 - [Dockerfile](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/Dockerfile)
 - [entrypoint.sh](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/entrypoint.sh)
 
-`entrypoint.sh` always runs the perf-test profile, ignores any non-`perf-test` environment value, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set.
+`entrypoint.sh` always runs the perf-test profile, ignores any non-`perf-test` environment value, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set. The JTL file is uploaded into that S3 prefix, and the generated HTML report contents are uploaded directly into the same prefix so the portal can find `index.html` at the report root.

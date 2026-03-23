@@ -37,7 +37,9 @@ if [ -n "${RESULTS_OUTPUT_S3_PATH:-}" ]; then
   fi
 
   if [ "${publish_exit}" -eq 0 ] && [ -f "${REPORT_DIR}/index.html" ]; then
-    aws --endpoint-url="${S3_ENDPOINT}" s3 cp "${REPORT_DIR}" "${RESULTS_OUTPUT_S3_PATH}/$(basename "${REPORT_DIR}")" --recursive || publish_exit=$?
+    aws --endpoint-url="${S3_ENDPOINT}" s3 cp "${REPORT_DIR}/" "${RESULTS_OUTPUT_S3_PATH}/" --recursive || publish_exit=$?
+  elif [ "${publish_exit}" -eq 0 ]; then
+    echo "[entrypoint] report index not found at ${REPORT_DIR}/index.html; skipping report upload"
   fi
 else
   echo "[entrypoint] RESULTS_OUTPUT_S3_PATH is not set; skipping publish"
