@@ -105,6 +105,9 @@ log.info(&quot;APHA Integration Bridge boundary load for ${envName}: mode=${test
           <stringProp name="script">
 import groovy.json.JsonSlurper
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
 import java.net.URLEncoder
 
 def mode = props.get(&apos;auth.mode&apos;, &apos;client_credentials&apos;).trim()
@@ -130,6 +133,17 @@ def connectTimeoutMs = Integer.parseInt(props.get(&apos;auth.connect.timeout.ms&
 def readTimeoutMs = Integer.parseInt(props.get(&apos;auth.response.timeout.ms&apos;, props.get(&apos;http.response.timeout.ms&apos;, &apos;30000&apos;)))
 def maxAttempts = Integer.parseInt(props.get(&apos;auth.request.retries&apos;, &apos;3&apos;))
 def retryDelayMs = Long.parseLong(props.get(&apos;auth.retry.delay.ms&apos;, &apos;2000&apos;))
+def authDebug = props.get(&apos;auth.debug&apos;, System.getenv(&apos;AUTH_DEBUG&apos;) ?: &apos;false&apos;).trim().equalsIgnoreCase(&apos;true&apos;)
+def envVars = System.getenv()
+def isLocal = (envVars.get(&apos;IS_LOCAL&apos;) ?: &apos;&apos;).trim().equalsIgnoreCase(&apos;true&apos;)
+def proxyValue = isLocal ? &apos;&apos; : (
+  envVars.get(&apos;HTTPS_PROXY&apos;) ?:
+  envVars.get(&apos;https_proxy&apos;) ?:
+  envVars.get(&apos;HTTP_PROXY&apos;) ?:
+  envVars.get(&apos;http_proxy&apos;) ?:
+  &apos;&apos;
+).trim()
+def credentialSource = props.get(&apos;auth.credential_source&apos;, &apos;properties&apos;).trim()
 assert host : &apos;auth.host must be set when auth.mode=client_credentials&apos;
 assert connectTimeoutMs &gt; 0 : &apos;auth.connect.timeout.ms must be greater than 0&apos;
 assert readTimeoutMs &gt; 0 : &apos;auth.response.timeout.ms must be greater than 0&apos;
@@ -139,6 +153,7 @@ assert retryDelayMs &gt;= 0L : &apos;auth.retry.delay.ms must be zero or greater
 def normalisedPath = tokenPath.startsWith(&apos;/&apos;) ? tokenPath : &quot;/${tokenPath}&quot;
 def portPart = port ? &quot;:${port}&quot; : &apos;&apos;
 def tokenUrl = new URL(&quot;${protocol}://${host}${portPart}${normalisedPath}&quot;)
+def maskedClientId = clientId ? clientId.take(4) + &apos;***&apos; + clientId.takeRight(Math.min(4, clientId.size())) : &apos;&lt;missing&gt;&apos;
 
 def encoded = &quot;${clientId}:${clientSecret}&quot;.getBytes(&apos;UTF-8&apos;).encodeBase64().toString()
 def form = [
@@ -149,10 +164,28 @@ def form = [
 
 Exception lastFailure = null
 
+if (authDebug) {
+  log.info(&quot;Auth debug: env=${props.get(&apos;environment.name&apos;, &apos;&apos;)}, tokenUrl=${tokenUrl}, credentialSource=${credentialSource}, clientId=${maskedClientId}, clientSecretLength=${clientSecret.length()}, proxy=${proxyValue ?: &apos;&lt;none&gt;&apos;}, isLocal=${isLocal}&quot;)
+}
+
 for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {
   HttpURLConnection connection = null
   try {
-    connection = (HttpURLConnection) tokenUrl.openConnection()
+    if (proxyValue) {
+      def proxyUri = new URI(proxyValue.contains(&apos;://&apos;) ? proxyValue : &quot;http://${proxyValue}&quot;)
+      def proxyHost = proxyUri.host
+      def proxyPort = proxyUri.port &gt; 0 ? proxyUri.port : 80
+      if (!proxyHost) {
+        throw new RuntimeException(&quot;HTTP proxy is set but could not be parsed: ${proxyValue}&quot;)
+      }
+      connection = (HttpURLConnection) tokenUrl.openConnection(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort)))
+      if (proxyUri.userInfo) {
+        def proxyAuth = proxyUri.userInfo.getBytes(&apos;UTF-8&apos;).encodeBase64().toString()
+        connection.setRequestProperty(&apos;Proxy-Authorization&apos;, &quot;Basic ${proxyAuth}&quot;)
+      }
+    } else {
+      connection = (HttpURLConnection) tokenUrl.openConnection()
+    }
     connection.setRequestMethod(&apos;POST&apos;)
     connection.setDoOutput(true)
     connection.setConnectTimeout(connectTimeoutMs)

@@ -21,6 +21,10 @@ Examples:
 EOF
 }
 
+resolve_env_name() {
+  printf '%s\n' "${ENV_NAME:-${environment:-${ENVIRONMENT:-perf-test}}}"
+}
+
 env_var_is_set() {
   local key="$1"
   env | LC_ALL=C grep -q "^${key}="
@@ -132,6 +136,34 @@ has_explicit_auth_client_secret() {
   return 1
 }
 
+has_explicit_auth_client_id() {
+  local arg=""
+
+  for arg in "$@"; do
+    case "${arg}" in
+      -Jauth.client_id=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+has_explicit_auth_host() {
+  local arg=""
+
+  for arg in "$@"; do
+    case "${arg}" in
+      -Jauth.host=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
 has_explicit_auth_bearer_token() {
   local arg=""
 
@@ -146,26 +178,77 @@ has_explicit_auth_bearer_token() {
   return 1
 }
 
+secret_value_for_env() {
+  local env_name="$1"
+
+  case "${env_name}" in
+    dev)
+      printf '%s\n' "${DEV_SECRET:-}"
+      ;;
+    test)
+      printf '%s\n' "${TEST_SECRET:-}"
+      ;;
+    perf|perf-test)
+      printf '%s\n' "${PERF_SECRET:-}"
+      ;;
+    prod|preprod)
+      printf '%s\n' "${PROD_SECRET:-}"
+      ;;
+  esac
+}
+
+normalise_cognito_domain() {
+  local domain="$1"
+
+  domain="${domain#http://}"
+  domain="${domain#https://}"
+  domain="${domain%%/*}"
+
+  printf '%s\n' "${domain}"
+}
+
 collect_auth_args() {
+  local env_name=""
   local bearer_token="${PERF_BEARER_TOKEN:-${AUTH_BEARER_TOKEN:-}}"
-  local secret_value="${PERF_SECRET-}"
+  local secret_value=""
+  local client_id="${COGNITO_CLIENT_ID:-}"
+  local cognito_domain="${COGNITO_DOMAIN:-}"
+
+  env_name="$(resolve_env_name)"
+  secret_value="${COGNITO_CLIENT_SECRET:-${CLIENT_SECRET:-$(secret_value_for_env "${env_name}")}}"
 
   if has_explicit_auth_client_secret "$@"; then
-    return 0
+    secret_value=""
   fi
 
   if has_explicit_auth_bearer_token "$@"; then
     return 0
   fi
 
+  if ! has_explicit_auth_client_id "$@" && [[ -n "${client_id}" ]]; then
+    printf '%s\0' "-Jauth.client_id=${client_id}"
+  fi
+
+  if ! has_explicit_auth_host "$@" && [[ -n "${cognito_domain}" ]]; then
+    printf '%s\0' "-Jauth.host=$(normalise_cognito_domain "${cognito_domain}")"
+  fi
+
   if [[ -n "${bearer_token}" ]]; then
     printf '%s\0' "-Jauth.mode=bearer_token"
     printf '%s\0' "-Jauth.bearer_token=${bearer_token}"
+    printf '%s\0' "-Jauth.credential_source=bearer_token_env"
     return 0
   fi
 
   if [[ -n "${secret_value}" ]]; then
     printf '%s\0' "-Jauth.client_secret=${secret_value}"
+    if [[ -n "${COGNITO_CLIENT_SECRET:-}" ]]; then
+      printf '%s\0' "-Jauth.credential_source=cognito_client_secret_override"
+    elif [[ -n "${CLIENT_SECRET:-}" ]]; then
+      printf '%s\0' "-Jauth.credential_source=client_secret_env"
+    else
+      printf '%s\0' "-Jauth.credential_source=${env_name}_secret"
+    fi
   fi
 }
 

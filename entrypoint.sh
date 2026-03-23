@@ -4,11 +4,12 @@ set -u   # no -e so we still publish after test failures
 
 echo "[entrypoint] run_id: ${RUN_ID:-unset}"
 
-ENV_VALUE="${environment:-${ENVIRONMENT:-perf-test}}"
+ENV_VALUE="${ENV_NAME:-${environment:-${ENVIRONMENT:-perf-test}}}"
 if [ "${ENV_VALUE}" != "perf-test" ]; then
   echo "[entrypoint] ignoring requested environment '${ENV_VALUE}' and using 'perf-test'"
 fi
 export environment="perf-test"
+export ENV_NAME="perf-test"
 echo "[entrypoint] environment: perf-test"
 
 if [ -n "${PERF_BEARER_TOKEN:-${AUTH_BEARER_TOKEN:-}}" ]; then

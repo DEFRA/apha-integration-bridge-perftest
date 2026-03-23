@@ -59,6 +59,20 @@ The OAuth token setup step uses its own retry and timeout settings from `environ
 
 If CDP cannot reliably reach the Cognito token endpoint, you can set `PERF_BEARER_TOKEN` (or `AUTH_BEARER_TOKEN`) and `bridge-perf` will automatically switch to `auth.mode=bearer_token` for that run. Explicit `-Jauth.*` flags still win over the env-based defaults.
 
+Auth env var support:
+
+- `PERF_SECRET`: default perf-test client secret
+- `CLIENT_SECRET`: fallback if CDP injects the secret under a generic name
+- `COGNITO_CLIENT_ID`: optional client ID override
+- `COGNITO_CLIENT_SECRET`: optional client secret override
+- `COGNITO_DOMAIN`: optional Cognito domain override
+- `AUTH_DEBUG=true`: logs resolved auth details with a masked client ID and secret length only
+
+Proxy behavior:
+
+- If `IS_LOCAL=true`, the token fetch does not use a proxy.
+- Otherwise, if `HTTPS_PROXY` or `HTTP_PROXY` is set, the Cognito token request uses that proxy.
+
 To set up local secrets, start from:
 
 - [secrets.env.example](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/secrets.env.example)
