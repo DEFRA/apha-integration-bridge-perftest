@@ -4,28 +4,25 @@ set -u   # no -e so we still publish after test failures
 
 echo "[entrypoint] run_id: ${RUN_ID:-unset}"
 
-ENV_VALUE="${environment:-${ENVIRONMENT:-dev}}"
-export environment="${ENV_VALUE}"
-echo "[entrypoint] environment: ${ENV_VALUE}"
-
-JMETER_ENV="${ENV_VALUE}"
-if [ "${ENV_VALUE}" = "prod" ]; then
-  JMETER_ENV="preprod"
-  echo "[entrypoint] mapping environment 'prod' to '${JMETER_ENV}' for JMeter properties"
+ENV_VALUE="${environment:-${ENVIRONMENT:-perf-test}}"
+if [ "${ENV_VALUE}" != "perf-test" ]; then
+  echo "[entrypoint] ignoring requested environment '${ENV_VALUE}' and using 'perf-test'"
 fi
+export environment="perf-test"
+echo "[entrypoint] environment: perf-test"
 
 NOW="$(date +"%Y%m%d-%H%M%S")"
 RUN_LABEL="${RUN_ID:-${NOW}}"
 RESULTS_DIR="./results"
 REPORTS_BASE="./reports"
-REPORT_NAME="${RUN_LABEL}-${ENV_VALUE}-boundary"
+REPORT_NAME="${RUN_LABEL}-perf-test-boundary"
 RESULT_FILE="${RESULTS_DIR}/${REPORT_NAME}.jtl"
 REPORT_DIR="${REPORTS_BASE}/${REPORT_NAME}"
 
 mkdir -p "${RESULTS_DIR}" "${REPORTS_BASE}"
 
-echo "[entrypoint] running boundary test: environment=${ENV_VALUE}"
-./bridge-perf "${JMETER_ENV}" -- \
+echo "[entrypoint] running boundary test: environment=perf-test"
+./bridge-perf -- \
   -Jresults.jtl=/dev/null \
   -l "${RESULT_FILE}" \
   -e -o "${REPORT_DIR}"

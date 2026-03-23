@@ -5,47 +5,37 @@ This repo is a portable `performance/jmeter` pack for the APHA Integration Bridg
 It contains:
 
 - `apha-integration-bridge-boundary.jmx`: the JMeter plan
-- `environments/`: per-environment property files
+- `environments/perf-test.properties`: the perf-test property file
 - `bridge-perf`: the main runner
 - `entrypoint.sh`: container/CDP entrypoint
 - `secrets.env.example`: example local secrets file
 
 ## Run It
 
-Run the full boundary test for an environment:
+Run the full perf-test boundary test:
 
 ```bash
-./bridge-perf dev
-./bridge-perf test
-./bridge-perf perf-test
-./bridge-perf preprod
+./bridge-perf
 ```
 
 Open the same plan in the JMeter GUI:
 
 ```bash
-./bridge-perf gui dev
-./bridge-perf gui test
+./bridge-perf gui
 ```
 
 Pass extra JMeter args after `--`:
 
 ```bash
-./bridge-perf dev -- -Jtarget.total.rps=30
-./bridge-perf preprod -- -Jresults.jtl=results/preprod-boundary.jtl
+./bridge-perf -- -Jtarget.total.rps=30
+./bridge-perf gui -- -Jresults.jtl=results/perf-test-boundary.jtl
 ```
 
 There are matching `make` targets:
 
 ```bash
-make dev
-make test
 make perf-test
-make preprod
-make gui-dev
-make gui-test
-make gui-perf-test
-make gui-preprod
+make gui
 ```
 
 ## Secrets
@@ -61,12 +51,7 @@ It accepts both `KEY=value` and `export KEY=value`.
 
 Existing shell environment variables win over file values.
 
-For normal runs it automatically injects `-Jauth.client_secret` for:
-
-- `dev` via `DEV_SECRET`
-- `test` via `TEST_SECRET`
-- `perf-test` via `PERF_SECRET`
-- `preprod` via `PREPROD_SECRET` or `PROD_SECRET`
+For normal runs it automatically injects `-Jauth.client_secret` from `PERF_SECRET`.
 
 If you pass `-Jauth.client_secret=...` explicitly, that value is used instead.
 
@@ -81,4 +66,4 @@ The Docker image uses:
 - [Dockerfile](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/Dockerfile)
 - [entrypoint.sh](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/entrypoint.sh)
 
-`entrypoint.sh` reads `ENVIRONMENT`, maps `prod` to `preprod`, runs `bridge-perf`, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set.
+`entrypoint.sh` always runs the perf-test profile, ignores any non-`perf-test` environment value, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set.

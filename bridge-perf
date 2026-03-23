@@ -3,28 +3,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLAN_FILE="${SCRIPT_DIR}/apha-integration-bridge-boundary.jmx"
-ENV_DIR="${SCRIPT_DIR}/environments"
+PROPERTIES_FILE="${SCRIPT_DIR}/environments/perf-test.properties"
 RESULTS_DIR="${SCRIPT_DIR}/results"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./bridge-perf gui <environment> [-- <extra-jmeter-args>]
-  ./bridge-perf <environment> [-- <extra-jmeter-args>]
+  ./bridge-perf gui [-- <extra-jmeter-args>]
+  ./bridge-perf [-- <extra-jmeter-args>]
   ./bridge-perf help
 
-Environments:
-  dev
-  test
-  perf-test
-  preprod
-
 Examples:
-  ./bridge-perf gui dev
-  ./bridge-perf dev
-  ./bridge-perf test
-  ./bridge-perf perf-test -- -Jtarget.total.rps=30
-  ./bridge-perf preprod -- -Jauth.client_secret="$PREPROD_SECRET"
+  ./bridge-perf gui
+  ./bridge-perf
+  ./bridge-perf -- -Jtarget.total.rps=30
+  ./bridge-perf gui -- -Jauth.client_secret="$PERF_SECRET"
 EOF
 }
 
@@ -125,18 +118,6 @@ require_java_compatible() {
   fi
 }
 
-resolve_env_file() {
-  local env_name="$1"
-  local env_file="${ENV_DIR}/${env_name}.properties"
-
-  if [[ ! -f "${env_file}" ]]; then
-    echo "Unknown environment '${env_name}'. Expected one of: dev, test, perf-test, preprod." >&2
-    exit 1
-  fi
-
-  printf '%s\n' "${env_file}"
-}
-
 has_explicit_auth_client_secret() {
   local arg=""
 
@@ -151,39 +132,14 @@ has_explicit_auth_client_secret() {
   return 1
 }
 
-secret_value_for_env() {
-  local env_name="$1"
-
-  case "${env_name}" in
-    dev)
-      printf '%s\n' "${DEV_SECRET-}"
-      ;;
-    test)
-      printf '%s\n' "${TEST_SECRET-}"
-      ;;
-    perf-test)
-      printf '%s\n' "${PERF_SECRET-}"
-      ;;
-    preprod)
-      if env_var_is_set PREPROD_SECRET; then
-        printf '%s\n' "${PREPROD_SECRET-}"
-      elif env_var_is_set PROD_SECRET; then
-        printf '%s\n' "${PROD_SECRET-}"
-      fi
-      ;;
-  esac
-}
-
-secret_arg_for_env() {
-  local env_name="$1"
-  shift
+secret_arg() {
   local secret_value=""
 
   if has_explicit_auth_client_secret "$@"; then
     return 0
   fi
 
-  secret_value="$(secret_value_for_env "${env_name}")"
+  secret_value="${PERF_SECRET-}"
   if [[ -n "${secret_value}" ]]; then
     printf '%s\n' "-Jauth.client_secret=${secret_value}"
   fi
@@ -197,19 +153,15 @@ collect_extra_args() {
 }
 
 run_gui() {
-  local env_name="$1"
-  shift
-  local env_file=""
-  env_file="$(resolve_env_file "${env_name}")"
   mkdir -p "${RESULTS_DIR}"
 
   local args=(
     -t "${PLAN_FILE}"
-    -q "${env_file}"
+    -q "${PROPERTIES_FILE}"
   )
 
   local secret_arg=""
-  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+  secret_arg="$(secret_arg "$@" || true)"
   if [[ -n "${secret_arg}" ]]; then
     args+=("${secret_arg}")
   fi
@@ -222,21 +174,17 @@ run_gui() {
 }
 
 run_boundary() {
-  local env_name="$1"
-  shift
-  local env_file=""
-  env_file="$(resolve_env_file "${env_name}")"
   mkdir -p "${RESULTS_DIR}"
 
   local args=(
     -n
     -t "${PLAN_FILE}"
-    -q "${env_file}"
-    "-Jresults.jtl=results/${env_name}-boundary.jtl"
+    -q "${PROPERTIES_FILE}"
+    "-Jresults.jtl=results/perf-test-boundary.jtl"
   )
 
   local secret_arg=""
-  secret_arg="$(secret_arg_for_env "${env_name}" "$@" || true)"
+  secret_arg="$(secret_arg "$@" || true)"
   if [[ -n "${secret_arg}" ]]; then
     args+=("${secret_arg}")
   fi
@@ -249,12 +197,11 @@ run_boundary() {
 }
 
 main() {
-  local command="${1:-help}"
+  local command="${1:-run}"
   if [[ "${command}" == "help" || "${command}" == "-h" || "${command}" == "--help" ]]; then
     usage
     return 0
   fi
-  shift || true
 
   load_local_env_files
   require_cmd java
@@ -263,11 +210,26 @@ main() {
   require_java_compatible
 
   if [[ "${command}" == "gui" ]]; then
-    [[ $# -ge 1 ]] || { usage >&2; exit 1; }
+    shift || true
+
+    if [[ "${1:-}" == "perf-test" ]]; then
+      shift || true
+    elif [[ "${1:-}" == "dev" || "${1:-}" == "test" || "${1:-}" == "preprod" ]]; then
+      echo "Only the perf-test profile is supported in this repo now." >&2
+      exit 1
+    fi
+
     run_gui "$@"
   fi
 
-  run_boundary "${command}" "$@"
+  if [[ "${command}" == "perf-test" ]]; then
+    shift || true
+  elif [[ "${command}" == "dev" || "${command}" == "test" || "${command}" == "preprod" ]]; then
+    echo "Only the perf-test profile is supported in this repo now." >&2
+    exit 1
+  fi
+
+  run_boundary "$@"
 }
 
 main "$@"

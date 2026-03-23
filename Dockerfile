@@ -12,6 +12,6 @@ COPY environments/ ./environments/
 RUN chmod +x ./bridge-perf ./entrypoint.sh
 
 ENV S3_ENDPOINT=https://s3.eu-west-2.amazonaws.com
-ENV ENVIRONMENT=dev
+ENV ENVIRONMENT=perf-test
 
 ENTRYPOINT ["./entrypoint.sh"]
