@@ -1,7 +1,11 @@
-node_modules
-Dockerfile
+.DS_Store
+.env
+.env.local
+.envrc
 .git
 .github
-.husky
 jmeter.log
 reports/
+results/
+secrets.env
+*.log

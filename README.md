@@ -1,61 +1,84 @@
-# apha-integration-bridge-perftest
+# APHA Integration Bridge JMeter Boundary Test
 
-A JMeter based test runner for the CDP Platform.
+This repo is a portable `performance/jmeter` pack for the APHA Integration Bridge boundary test.
 
-- [Licence](#licence)
-  - [About the licence](#about-the-licence)
+It contains:
 
-## Build
+- `apha-integration-bridge-boundary.jmx`: the JMeter plan
+- `environments/`: per-environment property files
+- `bridge-perf`: the main runner
+- `entrypoint.sh`: container/CDP entrypoint
+- `secrets.env.example`: example local secrets file
 
-Test suites are built automatically by the [.github/workflows/publish.yml](.github/workflows/publish.yml) action whenever a change are committed to the `main` branch.
-A successful build results in a Docker container that is capable of running your tests on the CDP Platform and publishing the results to the CDP Portal.
+## Run It
 
-## Run
+Run the full boundary test for an environment:
 
-The performance test suites are designed to be run from the CDP Portal.
-The CDP Platform runs test suites in much the same way it runs any other service, it takes a docker image and runs it as an ECS task, automatically provisioning infrastructure as required.
-
-## Local Testing with LocalStack
-
-### Build a new Docker image
-```
-docker build . -t my-performance-tests
-```
-### Create a Localstack bucket
-```
-aws --endpoint-url=localhost:4566 s3 mb s3://my-bucket
+```bash
+./bridge-perf dev
+./bridge-perf test
+./bridge-perf perf-test
+./bridge-perf preprod
 ```
 
-### Run performance tests
+Open the same plan in the JMeter GUI:
 
-```
-docker run \
--e S3_ENDPOINT='http://host.docker.internal:4566' \
--e RESULTS_OUTPUT_S3_PATH='s3://my-bucket' \
--e AWS_ACCESS_KEY_ID='test' \
--e AWS_SECRET_ACCESS_KEY='test' \
--e AWS_SECRET_KEY='test' \
--e AWS_REGION='eu-west-2' \
-my-performance-tests
+```bash
+./bridge-perf gui dev
+./bridge-perf gui test
 ```
 
-docker run -e S3_ENDPOINT='http://host.docker.internal:4566' -e RESULTS_OUTPUT_S3_PATH='s3://cdp-infra-dev-test-results/cdp-portal-perf-tests/95a01432-8f47-40d2-8233-76514da2236a' -e AWS_ACCESS_KEY_ID='test' -e AWS_SECRET_ACCESS_KEY='test' -e AWS_SECRET_KEY='test' -e AWS_REGION='eu-west-2' -e ENVIRONMENT='perf-test' my-performance-tests
+Pass extra JMeter args after `--`:
 
+```bash
+./bridge-perf dev -- -Jtarget.total.rps=30
+./bridge-perf preprod -- -Jresults.jtl=results/preprod-boundary.jtl
+```
 
-## Licence
+There are matching `make` targets:
 
-THIS INFORMATION IS LICENSED UNDER THE CONDITIONS OF THE OPEN GOVERNMENT LICENCE found at:
+```bash
+make dev
+make test
+make perf-test
+make preprod
+make gui-dev
+make gui-test
+make gui-perf-test
+make gui-preprod
+```
 
-<http://www.nationalarchives.gov.uk/doc/open-government-licence/version/3>
+## Secrets
 
-The following attribution statement MUST be cited in your products and applications when using this information.
+`bridge-perf` loads local env files from this folder in this order:
 
-> Contains public sector information licensed under the Open Government licence v3
+- `secrets.env`
+- `.env`
+- `.env.local`
+- `.envrc`
 
-### About the licence
+It accepts both `KEY=value` and `export KEY=value`.
 
-The Open Government Licence (OGL) was developed by the Controller of Her Majesty's Stationery Office (HMSO) to enable
-information providers in the public sector to license the use and re-use of their information under a common open
-licence.
+Existing shell environment variables win over file values.
 
-It is designed to encourage use and re-use of information freely and flexibly, with only a few conditions.
+For normal runs it automatically injects `-Jauth.client_secret` for:
+
+- `dev` via `DEV_SECRET`
+- `test` via `TEST_SECRET`
+- `perf-test` via `PERF_SECRET`
+- `preprod` via `PREPROD_SECRET` or `PROD_SECRET`
+
+If you pass `-Jauth.client_secret=...` explicitly, that value is used instead.
+
+To set up local secrets, start from:
+
+- [secrets.env.example](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/secrets.env.example)
+
+## Docker / CDP
+
+The Docker image uses:
+
+- [Dockerfile](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/Dockerfile)
+- [entrypoint.sh](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/entrypoint.sh)
+
+`entrypoint.sh` reads `ENVIRONMENT`, maps `prod` to `preprod`, runs `bridge-perf`, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set.
