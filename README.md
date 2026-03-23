@@ -55,6 +55,8 @@ For normal runs it automatically injects `-Jauth.client_secret` from `PERF_SECRE
 
 If you pass `-Jauth.client_secret=...` explicitly, that value is used instead.
 
+The OAuth token setup step uses its own retry and timeout settings from `environments/perf-test.properties`, so short-lived Cognito/network blips are less likely to fail the whole run before the API samplers start.
+
 To set up local secrets, start from:
 
 - [secrets.env.example](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/secrets.env.example)

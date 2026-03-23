@@ -126,7 +126,15 @@ def protocol = props.get(&apos;auth.protocol&apos;, &apos;https&apos;).trim()
 def host = props.get(&apos;auth.host&apos;, &apos;&apos;).trim()
 def port = props.get(&apos;auth.port&apos;, &apos;&apos;).trim()
 def tokenPath = props.get(&apos;auth.token.path&apos;, &apos;/oauth2/token&apos;).trim()
+def connectTimeoutMs = Integer.parseInt(props.get(&apos;auth.connect.timeout.ms&apos;, props.get(&apos;http.connect.timeout.ms&apos;, &apos;10000&apos;)))
+def readTimeoutMs = Integer.parseInt(props.get(&apos;auth.response.timeout.ms&apos;, props.get(&apos;http.response.timeout.ms&apos;, &apos;30000&apos;)))
+def maxAttempts = Integer.parseInt(props.get(&apos;auth.request.retries&apos;, &apos;3&apos;))
+def retryDelayMs = Long.parseLong(props.get(&apos;auth.retry.delay.ms&apos;, &apos;2000&apos;))
 assert host : &apos;auth.host must be set when auth.mode=client_credentials&apos;
+assert connectTimeoutMs &gt; 0 : &apos;auth.connect.timeout.ms must be greater than 0&apos;
+assert readTimeoutMs &gt; 0 : &apos;auth.response.timeout.ms must be greater than 0&apos;
+assert maxAttempts &gt; 0 : &apos;auth.request.retries must be greater than 0&apos;
+assert retryDelayMs &gt;= 0L : &apos;auth.retry.delay.ms must be zero or greater&apos;
 
 def normalisedPath = tokenPath.startsWith(&apos;/&apos;) ? tokenPath : &quot;/${tokenPath}&quot;
 def portPart = port ? &quot;:${port}&quot; : &apos;&apos;
@@ -139,29 +147,49 @@ def form = [
   client_secret: clientSecret
 ].collect { key, value -&gt; &quot;${key}=${URLEncoder.encode(String.valueOf(value), &apos;UTF-8&apos;)}&quot; }.join(&apos;&amp;&apos;)
 
-def connection = (HttpURLConnection) tokenUrl.openConnection()
-connection.setRequestMethod(&apos;POST&apos;)
-connection.setDoOutput(true)
-connection.setConnectTimeout(Integer.parseInt(props.get(&apos;http.connect.timeout.ms&apos;, &apos;10000&apos;)))
-connection.setReadTimeout(Integer.parseInt(props.get(&apos;http.response.timeout.ms&apos;, &apos;30000&apos;)))
-connection.setRequestProperty(&apos;Authorization&apos;, &quot;Basic ${encoded}&quot;)
-connection.setRequestProperty(&apos;Content-Type&apos;, props.get(&apos;header.content_type_form&apos;, &apos;application/x-www-form-urlencoded&apos;))
-connection.setRequestProperty(&apos;Accept&apos;, props.get(&apos;header.accept&apos;, &apos;application/json&apos;))
+Exception lastFailure = null
 
-connection.outputStream.withWriter(&apos;UTF-8&apos;) { writer -&gt;
-  writer &lt;&lt; form
+for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {
+  HttpURLConnection connection = null
+  try {
+    connection = (HttpURLConnection) tokenUrl.openConnection()
+    connection.setRequestMethod(&apos;POST&apos;)
+    connection.setDoOutput(true)
+    connection.setConnectTimeout(connectTimeoutMs)
+    connection.setReadTimeout(readTimeoutMs)
+    connection.setRequestProperty(&apos;Authorization&apos;, &quot;Basic ${encoded}&quot;)
+    connection.setRequestProperty(&apos;Content-Type&apos;, props.get(&apos;header.content_type_form&apos;, &apos;application/x-www-form-urlencoded&apos;))
+    connection.setRequestProperty(&apos;Accept&apos;, props.get(&apos;header.accept&apos;, &apos;application/json&apos;))
+
+    connection.outputStream.withWriter(&apos;UTF-8&apos;) { writer -&gt;
+      writer &lt;&lt; form
+    }
+
+    def status = connection.responseCode
+    def stream = status &gt;= 400 ? connection.errorStream : connection.inputStream
+    def body = stream ? stream.getText(&apos;UTF-8&apos;) : &apos;&apos;
+    assert status == 200 : &quot;OAuth token endpoint returned HTTP ${status}. Body=${body}&quot;
+    assert body?.trim() : &apos;OAuth token response body is empty&apos;
+
+    def json = new JsonSlurper().parseText(body)
+    def token = json?.access_token?.toString()?.trim()
+    assert token : &apos;OAuth token response did not contain access_token&apos;
+    props.put(&apos;auth.access_token.runtime&apos;, token)
+    return
+  } catch (AssertionError failure) {
+    throw failure
+  } catch (Exception failure) {
+    lastFailure = failure
+    log.warn(&quot;OAuth token attempt ${attempt}/${maxAttempts} failed for ${tokenUrl}: ${failure.class.simpleName}: ${failure.message}&quot;)
+    if (attempt &lt; maxAttempts &amp;&amp; retryDelayMs &gt; 0L) {
+      sleep(retryDelayMs)
+    }
+  } finally {
+    connection?.disconnect()
+  }
 }
 
-def status = connection.responseCode
-def stream = status &gt;= 400 ? connection.errorStream : connection.inputStream
-def body = stream ? stream.getText(&apos;UTF-8&apos;) : &apos;&apos;
-assert status == 200 : &quot;OAuth token endpoint returned HTTP ${status}. Body=${body}&quot;
-assert body?.trim() : &apos;OAuth token response body is empty&apos;
-
-def json = new JsonSlurper().parseText(body)
-def token = json?.access_token?.toString()?.trim()
-assert token : &apos;OAuth token response did not contain access_token&apos;
-props.put(&apos;auth.access_token.runtime&apos;, token)
+throw new AssertionError(&quot;OAuth token request failed after ${maxAttempts} attempts: ${lastFailure?.class?.simpleName}: ${lastFailure?.message}&quot;, lastFailure)
           </stringProp>
         </JSR223Sampler>
         <hashTree/>
