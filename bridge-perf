@@ -132,16 +132,40 @@ has_explicit_auth_client_secret() {
   return 1
 }
 
-secret_arg() {
-  local secret_value=""
+has_explicit_auth_bearer_token() {
+  local arg=""
+
+  for arg in "$@"; do
+    case "${arg}" in
+      -Jauth.bearer_token=*|-Jauth.mode=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+collect_auth_args() {
+  local bearer_token="${PERF_BEARER_TOKEN:-${AUTH_BEARER_TOKEN:-}}"
+  local secret_value="${PERF_SECRET-}"
 
   if has_explicit_auth_client_secret "$@"; then
     return 0
   fi
 
-  secret_value="${PERF_SECRET-}"
+  if has_explicit_auth_bearer_token "$@"; then
+    return 0
+  fi
+
+  if [[ -n "${bearer_token}" ]]; then
+    printf '%s\0' "-Jauth.mode=bearer_token"
+    printf '%s\0' "-Jauth.bearer_token=${bearer_token}"
+    return 0
+  fi
+
   if [[ -n "${secret_value}" ]]; then
-    printf '%s\n' "-Jauth.client_secret=${secret_value}"
+    printf '%s\0' "-Jauth.client_secret=${secret_value}"
   fi
 }
 
@@ -160,11 +184,9 @@ run_gui() {
     -q "${PROPERTIES_FILE}"
   )
 
-  local secret_arg=""
-  secret_arg="$(secret_arg "$@" || true)"
-  if [[ -n "${secret_arg}" ]]; then
-    args+=("${secret_arg}")
-  fi
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_auth_args "$@" || true)
 
   while IFS= read -r -d '' arg; do
     args+=("${arg}")
@@ -183,11 +205,9 @@ run_boundary() {
     "-Jresults.jtl=results/perf-test-boundary.jtl"
   )
 
-  local secret_arg=""
-  secret_arg="$(secret_arg "$@" || true)"
-  if [[ -n "${secret_arg}" ]]; then
-    args+=("${secret_arg}")
-  fi
+  while IFS= read -r -d '' arg; do
+    args+=("${arg}")
+  done < <(collect_auth_args "$@" || true)
 
   while IFS= read -r -d '' arg; do
     args+=("${arg}")

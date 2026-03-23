@@ -11,6 +11,12 @@ fi
 export environment="perf-test"
 echo "[entrypoint] environment: perf-test"
 
+if [ -n "${PERF_BEARER_TOKEN:-${AUTH_BEARER_TOKEN:-}}" ]; then
+  echo "[entrypoint] auth mode: bearer_token (from environment)"
+else
+  echo "[entrypoint] auth mode: client_credentials"
+fi
+
 NOW="$(date +"%Y%m%d-%H%M%S")"
 RUN_LABEL="${RUN_ID:-${NOW}}"
 RESULTS_DIR="./results"

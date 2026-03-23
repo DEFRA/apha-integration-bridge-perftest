@@ -168,16 +168,20 @@ for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {
     def status = connection.responseCode
     def stream = status &gt;= 400 ? connection.errorStream : connection.inputStream
     def body = stream ? stream.getText(&apos;UTF-8&apos;) : &apos;&apos;
-    assert status == 200 : &quot;OAuth token endpoint returned HTTP ${status}. Body=${body}&quot;
-    assert body?.trim() : &apos;OAuth token response body is empty&apos;
+    if (status != 200) {
+      throw new RuntimeException(&quot;OAuth token endpoint returned HTTP ${status}. Body=${body}&quot;)
+    }
+    if (!body?.trim()) {
+      throw new RuntimeException(&apos;OAuth token response body is empty&apos;)
+    }
 
     def json = new JsonSlurper().parseText(body)
     def token = json?.access_token?.toString()?.trim()
-    assert token : &apos;OAuth token response did not contain access_token&apos;
+    if (!token) {
+      throw new RuntimeException(&apos;OAuth token response did not contain access_token&apos;)
+    }
     props.put(&apos;auth.access_token.runtime&apos;, token)
     return
-  } catch (AssertionError failure) {
-    throw failure
   } catch (Exception failure) {
     lastFailure = failure
     log.warn(&quot;OAuth token attempt ${attempt}/${maxAttempts} failed for ${tokenUrl}: ${failure.class.simpleName}: ${failure.message}&quot;)
@@ -189,7 +193,7 @@ for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {
   }
 }
 
-throw new AssertionError(&quot;OAuth token request failed after ${maxAttempts} attempts: ${lastFailure?.class?.simpleName}: ${lastFailure?.message}&quot;, lastFailure)
+throw new RuntimeException(&quot;OAuth token request failed after ${maxAttempts} attempts: ${lastFailure?.class?.simpleName}: ${lastFailure?.message}&quot;, lastFailure)
           </stringProp>
         </JSR223Sampler>
         <hashTree/>
