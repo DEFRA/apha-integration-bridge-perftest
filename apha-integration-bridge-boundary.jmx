@@ -2,7 +2,7 @@
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="APHA Integration Bridge - 10 Minute Boundary Load Test">
-      <stringProp name="TestPlan.comments">Controlled boundary test for 5 APHA Integration Bridge endpoints. The plan defaults to the agreed 25 RPS steady-state rate with 50-request burst support and is intended for safe rate-limit verification rather than stress or soak testing.</stringProp>
+      <stringProp name="TestPlan.comments">Controlled boundary test for the active APHA Integration Bridge endpoints. The plan defaults to the agreed 25 RPS steady-state rate with 50-request burst support and is intended for safe rate-limit verification rather than stress or soak testing.</stringProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
         <collectionProp name="Arguments.arguments"/>
@@ -30,7 +30,7 @@
           <stringProp name="script">
 import java.math.RoundingMode
 
-def envName = props.get(&apos;environment.name&apos;, &apos;dev&apos;).trim()
+def envName = props.get(&apos;environment.name&apos;, &apos;perf-test&apos;).trim()
 def testMode = props.get(&apos;test.mode&apos;, &apos;boundary&apos;).trim().toLowerCase()
 assert [&apos;boundary&apos;, &apos;stress&apos;].contains(testMode) : &apos;test.mode must be boundary or stress&apos;
 
@@ -594,7 +594,7 @@ assert json.data.every { it.type == &apos;customers&apos; &amp;&amp; it.id?.toSt
             <hashTree/>
           </hashTree>
         </hashTree>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="05 POST /organisations/find" enabled="true"/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="05 POST /organisations/find" enabled="false"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /organisations/find" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -716,7 +716,7 @@ assert json.data.every { it.type == &apos;organisations&apos; &amp;&amp; it.id?.
         <stringProp name="filename">${__P(results.jtl,results/apha-integration-bridge-boundary.jtl)}</stringProp>
       </ResultCollector>
       <hashTree/>
-      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report">
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
         <objProp>
           <name>saveConfig</name>
@@ -753,7 +753,7 @@ assert json.data.every { it.type == &apos;organisations&apos; &amp;&amp; it.id?.
         <stringProp name="filename"></stringProp>
       </ResultCollector>
       <hashTree/>
-      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree" enabled="true">
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
         <objProp>
           <name>saveConfig</name>
