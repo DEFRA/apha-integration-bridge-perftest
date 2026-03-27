@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="APHA Integration Bridge - 10 Minute Boundary Load Test">
-      <stringProp name="TestPlan.comments">Controlled boundary test for the active APHA Integration Bridge endpoints. The plan defaults to the agreed 25 RPS steady-state rate with 50-request burst support and is intended for safe rate-limit verification rather than stress or soak testing.</stringProp>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="APHA Integration Bridge - Boundary Load Test">
+      <stringProp name="TestPlan.comments">Controlled boundary test for the active APHA Integration Bridge endpoints. Each active endpoint runs in its own thread group so the configured pacing is independent and the request counts stay aligned with the agreed low-volume profile.</stringProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
         <collectionProp name="Arguments.arguments"/>
@@ -242,10 +242,10 @@ assert token : &apos;No runtime access token is available for the boundary test&
         </JSR223Sampler>
         <hashTree/>
       </hashTree>
-      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - Main Request Mix" enabled="true">
-        <stringProp name="ThreadGroup.num_threads">${__P(threads.max,50)}</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,60)}</stringProp>
-        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;600&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;60&apos;))}</stringProp>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /locations/find" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
         <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
         <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
@@ -290,23 +290,7 @@ assert token : &apos;No runtime access token is available for the boundary test&
           <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
         </DurationAssertion>
         <hashTree/>
-        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Validate Main Runtime Properties" enabled="true">
-          <stringProp name="cacheKey">true</stringProp>
-          <stringProp name="filename"></stringProp>
-          <stringProp name="parameters"></stringProp>
-          <stringProp name="scriptLanguage">groovy</stringProp>
-          <stringProp name="script">
-assert props.get(&apos;auth.access_token.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime bearer token is missing before the main load starts&apos;
-assert props.get(&apos;target.total.rps.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime total RPS is missing before the main load starts&apos;
-assert props.get(&apos;target.burst.requests.runtime&apos;, &apos;&apos;).trim() : &apos;Runtime burst limit is missing before the main load starts&apos;
-[&apos;rps.locations_find&apos;, &apos;rps.workorders&apos;, &apos;rps.workorders_find&apos;,
- &apos;rps.customers_find&apos;, &apos;rps.organisations_find&apos;].each { key -&gt;
-  assert props.get(key, &apos;&apos;).trim() : &quot;Missing computed throughput property: ${key}&quot;
-}
-          </stringProp>
-        </JSR223Sampler>
-        <hashTree/>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="01 POST /locations/find" enabled="true"/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="POST /locations/find Controller" enabled="true"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /locations/find" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -390,7 +374,56 @@ assert json.data.every { it.type == &apos;locations&apos; &amp;&amp; it.id?.toSt
             <hashTree/>
           </hashTree>
         </hashTree>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="02 GET /workorders" enabled="true"/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - GET /workorders" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
+        <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="API HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.connect_timeout">${__P(http.connect.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(http.response.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(api.host,)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(api.port,)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(api.protocol,https)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation"></stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Common API Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">${__P(header.accept,application/json)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">${__P(header.user_agent,APHA-Integration-Bridge-JMeter-Boundary)}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Assert Samplers Complete Within Max Duration" enabled="true">
+          <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
+        </DurationAssertion>
+        <hashTree/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="GET /workorders Controller" enabled="true"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace GET /workorders" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -431,28 +464,21 @@ return waitMs
                 <elementProp name="pageSize" elementType="HTTPArgument">
                   <boolProp name="HTTPArgument.always_encode">true</boolProp>
                   <stringProp name="Argument.name">pageSize</stringProp>
-                  <stringProp name="Argument.value">${__P(endpoint.workorders.page_size,10)}</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.page_size,50)}</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                   <boolProp name="HTTPArgument.use_equals">true</boolProp>
                 </elementProp>
                 <elementProp name="startActivationDate" elementType="HTTPArgument">
                   <boolProp name="HTTPArgument.always_encode">true</boolProp>
                   <stringProp name="Argument.name">startActivationDate</stringProp>
-                  <stringProp name="Argument.value">${__P(endpoint.workorders.start_activation_date,2022-02-18T09:54:09.778Z)}</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.start_activation_date,2025-07-18T09:54:09.778Z)}</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                   <boolProp name="HTTPArgument.use_equals">true</boolProp>
                 </elementProp>
                 <elementProp name="endActivationDate" elementType="HTTPArgument">
                   <boolProp name="HTTPArgument.always_encode">true</boolProp>
                   <stringProp name="Argument.name">endActivationDate</stringProp>
-                  <stringProp name="Argument.value">${__P(endpoint.workorders.end_activation_date,2026-02-18T09:54:09.778Z)}</stringProp>
-                  <stringProp name="Argument.metadata">=</stringProp>
-                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
-                </elementProp>
-                <elementProp name="country" elementType="HTTPArgument">
-                  <boolProp name="HTTPArgument.always_encode">true</boolProp>
-                  <stringProp name="Argument.name">country</stringProp>
-                  <stringProp name="Argument.value">${__P(endpoint.workorders.country,SCOTLAND)}</stringProp>
+                  <stringProp name="Argument.value">${__P(endpoint.workorders.end_activation_date,2026-03-18T09:54:09.778Z)}</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                   <boolProp name="HTTPArgument.use_equals">true</boolProp>
                 </elementProp>
@@ -491,7 +517,56 @@ assert json.data.every { it.type == &apos;workorders&apos; &amp;&amp; it.id?.toS
             <hashTree/>
           </hashTree>
         </hashTree>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="03 POST /workorders/find" enabled="true"/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /workorders/find" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
+        <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="API HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.connect_timeout">${__P(http.connect.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(http.response.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(api.host,)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(api.port,)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(api.protocol,https)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation"></stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Common API Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">${__P(header.accept,application/json)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">${__P(header.user_agent,APHA-Integration-Bridge-JMeter-Boundary)}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Assert Samplers Complete Within Max Duration" enabled="true">
+          <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
+        </DurationAssertion>
+        <hashTree/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="POST /workorders/find Controller" enabled="true"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /workorders/find" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -575,7 +650,56 @@ assert json.data.every { it.type == &apos;workorders&apos; &amp;&amp; it.id?.toS
             <hashTree/>
           </hashTree>
         </hashTree>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="04 POST /customers/find" enabled="true"/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /customers/find" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
+        <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="API HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.connect_timeout">${__P(http.connect.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(http.response.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(api.host,)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(api.port,)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(api.protocol,https)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation"></stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Common API Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">${__P(header.accept,application/json)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">${__P(header.user_agent,APHA-Integration-Bridge-JMeter-Boundary)}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Assert Samplers Complete Within Max Duration" enabled="true">
+          <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
+        </DurationAssertion>
+        <hashTree/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="POST /customers/find Controller" enabled="true"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /customers/find" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -659,7 +783,56 @@ assert json.data.every { it.type == &apos;customers&apos; &amp;&amp; it.id?.toSt
             <hashTree/>
           </hashTree>
         </hashTree>
-        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="05 POST /organisations/find" enabled="false"/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /organisations/find" enabled="false">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
+        <stringProp name="ThreadGroup.delay">${__P(startup.delay.seconds,0)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="API HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.connect_timeout">${__P(http.connect.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(http.response.timeout.ms,10000)}</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(api.host,)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(api.port,)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(api.protocol,https)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation"></stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Common API Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">${__P(header.accept,application/json)}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">${__P(header.user_agent,APHA-Integration-Bridge-JMeter-Boundary)}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Assert Samplers Complete Within Max Duration" enabled="true">
+          <stringProp name="DurationAssertion.duration">${__P(request.max.duration.ms,10000)}</stringProp>
+        </DurationAssertion>
+        <hashTree/>
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="POST /organisations/find Controller" enabled="true"/>
         <hashTree>
           <JSR223Timer guiclass="TestBeanGUI" testclass="JSR223Timer" testname="Pace POST /organisations/find" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
@@ -781,7 +954,7 @@ assert json.data.every { it.type == &apos;organisations&apos; &amp;&amp; it.id?.
         <stringProp name="filename">${__P(results.jtl,results/apha-integration-bridge-boundary.jtl)}</stringProp>
       </ResultCollector>
       <hashTree/>
-      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
         <objProp>
           <name>saveConfig</name>
@@ -818,7 +991,7 @@ assert json.data.every { it.type == &apos;organisations&apos; &amp;&amp; it.id?.
         <stringProp name="filename"></stringProp>
       </ResultCollector>
       <hashTree/>
-      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree">
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
         <objProp>
           <name>saveConfig</name>

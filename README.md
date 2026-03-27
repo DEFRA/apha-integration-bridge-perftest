@@ -62,7 +62,7 @@ If CDP cannot reliably reach the Cognito token endpoint, you can set `PERF_BEARE
 Auth env var support:
 
 - `PERF_SECRET`: default perf-test client secret
-- `CLIENT_SECRET`: fallback if CDP injects the secret under a generic name
+- `CLIENT_SECRET`: fallback only if the env-specific secret such as `PERF_SECRET` is not present
 - `COGNITO_CLIENT_ID`: optional client ID override
 - `COGNITO_CLIENT_SECRET`: optional client secret override
 - `COGNITO_DOMAIN`: optional Cognito domain override
@@ -85,3 +85,5 @@ The Docker image uses:
 - [entrypoint.sh](/Users/eoincorr/Documents/DEFRA/apha-integration-bridge-perftest/entrypoint.sh)
 
 `entrypoint.sh` always runs the perf-test profile, ignores any non-`perf-test` environment value, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set. The JTL file is uploaded into that S3 prefix, and the generated HTML report contents are uploaded directly into the same prefix so the portal can find `index.html` at the report root.
+
+After publishing, `entrypoint.sh` exits non-zero if the JTL contains any failed samples, so CDP can mark the run as failed even when JMeter itself exits `0`.

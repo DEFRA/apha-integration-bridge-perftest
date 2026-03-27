@@ -36,6 +36,12 @@ echo "[entrypoint] running boundary test: environment=perf-test"
 test_exit=$?
 echo "[entrypoint] bridge-perf exit code: ${test_exit}"
 
+failure_count=0
+if [ -f "${RESULT_FILE}" ]; then
+  failure_count="$(grep -c ',false,' "${RESULT_FILE}" || true)"
+fi
+echo "[entrypoint] failed sample count: ${failure_count}"
+
 echo "[entrypoint] publishing results..."
 publish_exit=0
 if [ -n "${RESULTS_OUTPUT_S3_PATH:-}" ]; then
@@ -60,5 +66,10 @@ if [ "${publish_exit}" -ne 0 ]; then
   exit "${publish_exit}"
 fi
 
-echo "[entrypoint] test suite complete (bridge-perf exit ${test_exit})"
-exit "${test_exit}"
+run_exit="${test_exit}"
+if [ "${run_exit}" -eq 0 ] && [ "${failure_count}" -gt 0 ]; then
+  run_exit=1
+fi
+
+echo "[entrypoint] test suite complete (bridge-perf exit ${test_exit}, final exit ${run_exit})"
+exit "${run_exit}"
