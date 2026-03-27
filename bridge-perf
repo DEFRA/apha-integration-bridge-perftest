@@ -211,11 +211,13 @@ collect_auth_args() {
   local env_name=""
   local bearer_token="${PERF_BEARER_TOKEN:-${AUTH_BEARER_TOKEN:-}}"
   local secret_value=""
+  local env_secret_value=""
   local client_id="${COGNITO_CLIENT_ID:-}"
   local cognito_domain="${COGNITO_DOMAIN:-}"
 
   env_name="$(resolve_env_name)"
-  secret_value="${COGNITO_CLIENT_SECRET:-${CLIENT_SECRET:-$(secret_value_for_env "${env_name}")}}"
+  env_secret_value="$(secret_value_for_env "${env_name}")"
+  secret_value="${COGNITO_CLIENT_SECRET:-${env_secret_value:-${CLIENT_SECRET:-}}}"
 
   if has_explicit_auth_client_secret "$@"; then
     secret_value=""
@@ -244,10 +246,10 @@ collect_auth_args() {
     printf '%s\0' "-Jauth.client_secret=${secret_value}"
     if [[ -n "${COGNITO_CLIENT_SECRET:-}" ]]; then
       printf '%s\0' "-Jauth.credential_source=cognito_client_secret_override"
+    elif [[ -n "${env_secret_value}" ]]; then
+      printf '%s\0' "-Jauth.credential_source=${env_name}_secret"
     elif [[ -n "${CLIENT_SECRET:-}" ]]; then
       printf '%s\0' "-Jauth.credential_source=client_secret_env"
-    else
-      printf '%s\0' "-Jauth.credential_source=${env_name}_secret"
     fi
   fi
 }
