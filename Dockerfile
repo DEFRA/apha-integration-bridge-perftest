@@ -4,12 +4,13 @@ WORKDIR /opt/perftest
 
 COPY bridge-perf ./
 COPY entrypoint.sh ./
+COPY report-summary.sh ./
 COPY apha-integration-bridge-boundary.jmx ./
 COPY apha-integration-bridge-boundary.sample.properties ./
 COPY secrets.env.example ./
 COPY environments/ ./environments/
 
-RUN chmod +x ./bridge-perf ./entrypoint.sh
+RUN chmod +x ./bridge-perf ./entrypoint.sh ./report-summary.sh
 
 ENV S3_ENDPOINT=https://s3.eu-west-2.amazonaws.com
 ENV ENVIRONMENT=perf-test

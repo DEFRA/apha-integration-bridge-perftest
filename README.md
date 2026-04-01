@@ -86,4 +86,11 @@ The Docker image uses:
 
 `entrypoint.sh` always runs the perf-test profile, ignores any non-`perf-test` environment value, and publishes results if `RESULTS_OUTPUT_S3_PATH` is set. The JTL file is uploaded into that S3 prefix, and the generated HTML report contents are uploaded directly into the same prefix so the portal can find `index.html` at the report root.
 
+The report root now contains a lightweight summary landing page, plus:
+
+- `jmeter-dashboard/index.html`: the full stock JMeter dashboard
+- `summary.txt`: a plain-text summary of the run
+- `sampler-breakdown.tsv`: per-sampler counts and latency figures
+- `failure-breakdown.tsv`: grouped failure counts by sampler, response code, and message
+
 After publishing, `entrypoint.sh` exits non-zero if the JTL contains any failed samples, so CDP can mark the run as failed even when JMeter itself exits `0`.

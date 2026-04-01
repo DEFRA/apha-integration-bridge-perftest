@@ -25,16 +25,23 @@ REPORTS_BASE="./reports"
 REPORT_NAME="${RUN_LABEL}-perf-test-boundary"
 RESULT_FILE="${RESULTS_DIR}/${REPORT_NAME}.jtl"
 REPORT_DIR="${REPORTS_BASE}/${REPORT_NAME}"
+DASHBOARD_DIR="${REPORT_DIR}/jmeter-dashboard"
 
-mkdir -p "${RESULTS_DIR}" "${REPORTS_BASE}"
+mkdir -p "${RESULTS_DIR}" "${REPORTS_BASE}" "${REPORT_DIR}"
 
 echo "[entrypoint] running boundary test: environment=perf-test"
 ./bridge-perf -- \
   -Jresults.jtl=/dev/null \
   -l "${RESULT_FILE}" \
-  -e -o "${REPORT_DIR}"
+  -e -o "${DASHBOARD_DIR}"
 test_exit=$?
 echo "[entrypoint] bridge-perf exit code: ${test_exit}"
+
+if ./report-summary.sh "${RESULT_FILE}" "${REPORT_DIR}" "${RUN_LABEL}" "jmeter-dashboard/index.html"; then
+  echo "[entrypoint] generated summary report landing page"
+else
+  echo "[entrypoint] failed to generate summary report landing page"
+fi
 
 failure_count=0
 if [ -f "${RESULT_FILE}" ]; then
