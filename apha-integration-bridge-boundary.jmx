@@ -784,7 +784,7 @@ assert json.data.every { it.type == &apos;customers&apos; &amp;&amp; it.id?.toSt
           </hashTree>
         </hashTree>
       </hashTree>
-      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /organisations/find" enabled="false">
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Boundary Load - POST /organisations/find" enabled="true">
         <stringProp name="ThreadGroup.num_threads">${__P(threads.per_endpoint,1)}</stringProp>
         <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up.seconds,0)}</stringProp>
         <stringProp name="ThreadGroup.duration">${__groovy(Integer.parseInt(props.getProperty(&apos;test.duration.seconds&apos;)?:&apos;300&apos;) + Integer.parseInt(props.getProperty(&apos;ramp_up.seconds&apos;)?:&apos;0&apos;))}</stringProp>
