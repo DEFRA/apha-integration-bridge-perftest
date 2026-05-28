@@ -1,4 +1,4 @@
-FROM defradigital/cdp-perf-test-docker:latest
+FROM defradigital/cdp-perf-test-docker:1.18013724831.0
 
 WORKDIR /opt/perftest
 

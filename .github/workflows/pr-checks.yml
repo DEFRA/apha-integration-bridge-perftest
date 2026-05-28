@@ -1,0 +1,34 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@5a2ce3f5b92ee19cbb1541a4984c76d921601d7c # v4.3.4
+
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: dependency-review
+    steps:
+      - name: Check out code
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+
+      - name: Build the test suite
+        uses: DEFRA/cdp-build-action/build-test@7fe324bec9987c5a4d0f4724b42e30c282892ceb # main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
