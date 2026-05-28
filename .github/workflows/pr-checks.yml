@@ -36,5 +36,5 @@ jobs:
       - name: Build the test suite
         uses: DEFRA/cdp-build-action/build-test@main
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: pr-${{ github.event.pull_request.number }}
           push: false
