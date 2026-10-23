@@ -1258,7 +1258,7 @@ return waitMs
             </elementProp>
           </HTTPSamplerProxy>
           <hashTree>
-            <ResponseAssertion guiclass="ResponseAssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for GET Holding Suppliers" enabled="true">
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for GET Holding Suppliers" enabled="true">
               <collectionProp name="Asserion.test_strings">
                 <stringProp name="49586">200</stringProp>
               </collectionProp>
@@ -1370,7 +1370,7 @@ return waitMs
             </elementProp>
           </HTTPSamplerProxy>
           <hashTree>
-            <ResponseAssertion guiclass="ResponseAssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for GET Holding Parties" enabled="true">
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200 for GET Holding Parties" enabled="true">
               <collectionProp name="Asserion.test_strings">
                 <stringProp name="49586">200</stringProp>
               </collectionProp>
