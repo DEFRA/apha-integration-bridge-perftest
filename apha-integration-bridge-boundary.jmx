@@ -1095,7 +1095,7 @@ assert json.data.every { item -&gt;
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Authorization</stringProp>
-              <stringProp name="Header.value">Bearer ${__groovy(props.getProperty(&apos;auth.access_token.runtime&apos;, &apos;&apos;))}</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Accept</stringProp>
@@ -1207,7 +1207,7 @@ assert json.data.every { it.id?.toString()?.trim() } : &apos;GET holding locatio
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Authorization</stringProp>
-              <stringProp name="Header.value">Bearer ${__groovy(props.getProperty(&apos;auth.access_token.runtime&apos;, &apos;&apos;))}</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Accept</stringProp>
@@ -1319,7 +1319,7 @@ assert json.data.every { it.id?.toString()?.trim() } : &apos;GET holding supplie
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Authorization</stringProp>
-              <stringProp name="Header.value">Bearer ${__groovy(props.getProperty(&apos;auth.access_token.runtime&apos;, &apos;&apos;))}</stringProp>
+              <stringProp name="Header.value">Bearer ${__property(auth.access_token.runtime,)}</stringProp>
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Accept</stringProp>
